@@ -1,4 +1,4 @@
-.mp4
-.mpd
+*.mp4
+*.mpd
 /build
 \build
