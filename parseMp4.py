@@ -252,6 +252,8 @@ class MP4ParserApp:
             return self.get_iods_description(box_data)
         elif box_type == "tkhd":
             return self.get_tkhd_description(box_data)
+        elif box_type == "tfhd":
+            return self.get_tfhd_description(box_data)
         elif box_type == "meta":
             return self.get_meta_description(box_data, boxSize)
         elif box_type == "mdat":
