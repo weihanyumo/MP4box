@@ -9,7 +9,7 @@ import time
 
 class TRACK:
     def __init__(self):
-        self.timescale = 1
+        self.timescale = 24000
         self.trackType = 0
         
         self.elst = []
@@ -20,6 +20,8 @@ class TRACK:
         self.stco = []
         self.stss = []
         self.frame_start_positions =[]
+        self.cumulativeTime=0
+        self.duration = 0
         
     def calculate_frame_info(self):
         dts = 0
@@ -209,6 +211,9 @@ class MP4ParserApp:
             self.hex_text.insert(tk.END, hex_data)
     
     def parse_fmp4(self, file_path):
+        track = TRACK()
+        self.track.append(track)
+        self.currentTrak=track
         with open(file_path, 'rb') as file:
             offset = 0  # 追踪当前偏移量
             while True:
@@ -597,7 +602,7 @@ class MP4ParserApp:
 
     def get_moof_description(self, box_data):
         description = "Movie Fragment Box\n"
-        offset = 0
+        offset = 0 
         while offset < len(box_data):
             box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data), offset)
             description += f"子 Box 类型: {box_type}, 大小: {box_size}\n"
@@ -663,14 +668,18 @@ class MP4ParserApp:
             description += f"第一帧 Flags: 0x{first_sample_flags:08X}\n"
 
         startAddress = 0;
-        
+        sample_duration = self.currentTrak.duration
+        cumulativeTime=self.currentTrak.cumulativeTime
+        sample_cto=0
         for i in range(sample_count):
             sample_info = []
             if flags & 0x000100:
                 sample_duration = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
-                sample_info.append(f"duration: {sample_duration}")
+            else:
+                sample_duration=self.currentTrak.duration
 
+            sample_info.append(f"duration: {sample_duration}")
             if flags & 0x000200:
                 sample_size = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
@@ -688,10 +697,15 @@ class MP4ParserApp:
                 sample_cto = struct.unpack(">i", box_data[offset:offset+4])[0]
                 offset += 4
                 sample_info.append(f"time delta: {sample_cto}")
+                
+            samplePresentationTime = cumulativeTime + sample_cto - 0
+            #edtsOffset;
+            cumulativeTime += sample_duration;
+            sample_info.append(f"pts:{samplePresentationTime/self.currentTrak.timescale}")
 
             description += f"sample {i+1}: {', '.join(sample_info)}\n"
         description += f" bufferSize: {allbufferSize}"
-
+        self.currentTrak.cumulativeTime=cumulativeTime
         return description
 
     def get_tfhd_description(self, box_data):
@@ -701,6 +715,7 @@ class MP4ParserApp:
 
         if flags & 0x00000001: 
             default_sample_duration = struct.unpack('>I', box_data[8:12])[0]
+            self.currentTrak.duration = default_sample_duration
             description += f", default sample duration: {default_sample_duration}"
 
         if flags & 0x00000002: 
