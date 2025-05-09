@@ -6,10 +6,11 @@ from tkinter import filedialog
 import io
 import sys
 import time
+from tkinter import simpledialog
 
 class TRACK:
     def __init__(self):
-        self.timescale = 24000
+        self.timescale = 0
         self.trackType = 0
         
         self.elst = []
@@ -212,9 +213,6 @@ class MP4ParserApp:
             self.hex_text.insert(tk.END, hex_data)
     
     def parse_fmp4(self, file_path):
-        track = TRACK()
-        self.track.append(track)
-        self.currentTrak=track
         with open(file_path, 'rb') as file:
             offset = 0  # 追踪当前偏移量
             while True:
@@ -672,6 +670,10 @@ class MP4ParserApp:
             first_sample_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
             offset += 4
             description += f"第一帧 Flags: 0x{first_sample_flags:08X}\n"
+        
+        if self.currentTrak.timescale < 1:
+            user_input = simpledialog.askinteger("输入timescale数值", "请输入timeScale：（从init mp4读）")
+            self.currentTrak.timescale=user_input
         description+=f"timescale:{self.currentTrak.timescale} duration:{self.currentTrak.duration}\n"
         startAddress = 0;
         sample_duration = self.currentTrak.duration
