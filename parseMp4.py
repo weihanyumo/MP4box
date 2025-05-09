@@ -22,6 +22,7 @@ class TRACK:
         self.frame_start_positions =[]
         self.cumulativeTime=0
         self.duration = 0
+        self.trackID = 0
         
     def calculate_frame_info(self):
         dts = 0
@@ -91,7 +92,7 @@ class MP4ParserApp:
         self.box_hex_data = {}  
         self.timescale = 1
         self.duration = 0
-        self.track = []
+        self.tracks = []
         self.currentTrak = {}
         self.elst = []
         self.stts = []
@@ -303,8 +304,10 @@ class MP4ParserApp:
 
 #get box des   
     def get_sample_description(self):
-        description = f"track count: {len(self.track)}\n"
-        for i, track in enumerate(self.track):
+        description = f"track count: {len(self.tracks)}\n"
+        print(f"description tracks count:{len(self.tracks)}")
+        for i, track in enumerate(self.tracks):
+            print(f"calculate track:{track.trackID}")
             frames = track.calculate_frame_info()
             description += f"track {i+1} frame count: {len(frames)}\n"
             for j, frame in enumerate(frames):
@@ -394,6 +397,8 @@ class MP4ParserApp:
         track_id, = struct.unpack(">I", box_data[offset:offset+4])
         offset += 4
         description += (f"Track ID: {track_id}\n")
+        
+        self.currentTrak=self.get_or_create_track(track_id)
 
         # Reserved (4 bytes)
         offset += 4
@@ -541,7 +546,7 @@ class MP4ParserApp:
                 offset += 4
         else:
             self.stsz = [sample_size] * sample_count
-        return f"sample count： {sample_count} \nsizes: {'\n'.join(map(str, self.stsz))}"
+        return f"sample_size:{sample_size}sample count： {sample_count} \n sizes: {'\n'.join(map(str, self.stsz))}"
            
     def get_stsc_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
@@ -632,6 +637,7 @@ class MP4ParserApp:
     def get_traf_description(self,startPos, box_data):
         description = "Track Fragment Box\n"
         offset = 0
+        
         while offset < len(box_data):
             box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data), offset)
             description += f"子 Box 类型: {box_type}, 大小: {box_size}\n"
@@ -666,7 +672,7 @@ class MP4ParserApp:
             first_sample_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
             offset += 4
             description += f"第一帧 Flags: 0x{first_sample_flags:08X}\n"
-
+        description+=f"timescale:{self.currentTrak.timescale} duration:{self.currentTrak.duration}\n"
         startAddress = 0;
         sample_duration = self.currentTrak.duration
         cumulativeTime=self.currentTrak.cumulativeTime
@@ -708,11 +714,23 @@ class MP4ParserApp:
         self.currentTrak.cumulativeTime=cumulativeTime
         return description
 
+    def get_or_create_track(self, track_id):
+        for track in self.tracks:
+            if track.trackID == track_id:
+                return track
+
+            
+        track = TRACK()
+        track.trackID=track_id
+        self.tracks.append(track)
+        return track
     def get_tfhd_description(self, box_data):
         track_id = struct.unpack('>I', box_data[0:4])[0]
         flags = struct.unpack('>I', box_data[4:8])[0]
         description = f"track ID: {track_id}, flags: {flags}"
-
+   
+        self.currentTrak = self.get_or_create_track(track_id)
+        
         if flags & 0x00000001: 
             default_sample_duration = struct.unpack('>I', box_data[8:12])[0]
             self.currentTrak.duration = default_sample_duration
@@ -768,15 +786,7 @@ class MP4ParserApp:
             box_size, box_type, box_data, box_header = self.read_box(box_file, offset)
             if not box_size:
                 break
-            if box_type == "trak":
-                track = TRACK()
-                self.track.append(track)
-                self.currentTrak = track
             description = self.get_box_description( offset, box_size, box_type, box_data)
-            if box_type == "trak":
-                self.currentTrak = track
-                print(f"track num:{len(self.track)}")
-            #description = f"size:{box_size}, des:{description}"
             hex_data = self.get_hex_data(box_header+box_data, box_type)
             self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
             offset += box_size
