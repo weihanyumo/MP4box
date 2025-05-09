@@ -95,12 +95,7 @@ class MP4ParserApp:
         self.duration = 0
         self.tracks = []
         self.currentTrak = {}
-        self.elst = []
-        self.stts = []
-        self.ctts = []
-        self.stsz = []
-        self.stsc = []
-        self.stco = []
+
         self.stss = []
         self.mdat_item_id = 0
         self.totlalFrameCount = 0;
@@ -490,11 +485,10 @@ class MP4ParserApp:
         
         for _ in range(entry_count):
             segment_duration, media_time, media_rate = struct.unpack('>III', box_data[offset:offset+12])
-            self.elst.append((segment_duration, media_time, media_rate))
             self.currentTrak.elst.append((segment_duration, media_time, media_rate))
             offset += 12
         
-        return f"entry count: {entry_count}, \nchunk: {'\n'.join(map(str, self.elst))}"
+        return f"entry count: {entry_count}, \nchunk: {'\n'.join(map(str, self.currentTrak.elst))}"
         
     def get_stts_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
@@ -504,7 +498,6 @@ class MP4ParserApp:
         for _ in range(entry_count):
             count, sample_delta  = struct.unpack('>II', box_data[index:index+8])
             index += 8
-            self.stts.append((count, sample_delta ))
             self.currentTrak.stts.append((count, sample_delta ))
             sample_data.append(f"duration: {sample_delta }, count: {count}")
         return f"entry count: {entry_count} \n{'\n'.join(sample_data)}"
@@ -517,7 +510,6 @@ class MP4ParserApp:
         for _ in range(entry_count):
             count, composition_delta = struct.unpack('>II', box_data[index:index+8])
             index += 8
-            self.ctts.append((count, composition_delta))
             self.currentTrak.ctts.append((count, composition_delta))
             sample_data.append(f"duration: {composition_delta}, count: {count}")
         return f"entry count: {entry_count}\n {'\n'.join(sample_data)}"
@@ -529,8 +521,7 @@ class MP4ParserApp:
             sync_sample = struct.unpack('>I', box_data[index:index+4])[0]
             index += 4
             self.currentTrak.stss.append(sync_sample)
-            self.stss.append(sync_sample)
-        return f"sync sample count： {entry_count}  \nsync samples: {'\n'.join(map(str, self.stss))}"
+        return f"sync sample count： {entry_count}  \nsync samples: {'\n'.join(map(str, self.currentTrak.stss))}"
         
     def get_stsz_description(self, box_data):
         verflag, sample_size = struct.unpack('>II', box_data[:8])
@@ -539,32 +530,29 @@ class MP4ParserApp:
         if sample_size == 0:
             for _ in range(sample_count):
                 entry_size = struct.unpack('>I', box_data[offset:offset + 4])[0]
-                self.stsz.append(entry_size)
                 self.currentTrak.stsz.append(entry_size)
                 offset += 4
         else:
-            self.stsz = [sample_size] * sample_count
-        return f"sample_size:{sample_size}sample count： {sample_count} \n sizes: {'\n'.join(map(str, self.stsz))}"
+            self.currentTrak.stsz = [sample_size] * sample_count
+        return f"sample_size:{sample_size}sample count： {sample_count} \n sizes: {'\n'.join(map(str, self.currentTrak.stsz))}"
            
     def get_stsc_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         offset = 8
         for _ in range(entry_count):
             first_chunk, samples_per_chunk, sample_desc_idx = struct.unpack('>III', box_data[offset:offset + 12])
-            self.stsc.append((first_chunk, samples_per_chunk, sample_desc_idx))
             self.currentTrak.stsc.append((first_chunk, samples_per_chunk, sample_desc_idx))
             offset += 12
-        return f"entry count: {entry_count}, \nchunks: {'\n'.join(map(str, self.stsc))}"
+        return f"entry count: {entry_count}, \nchunks: {'\n'.join(map(str, self.currentTrak.stsc))}"
         
     def get_stco_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         offset = 8
         for _ in range(entry_count):
             chunk_offset = struct.unpack('>I', box_data[offset:offset + 4])[0]
-            self.stco.append(chunk_offset)
             self.currentTrak.stco.append(chunk_offset)
             offset += 4
-        return f"entry count: {entry_count} \nchunk: {'\n'.join(map(str, self.stco))}"
+        return f"entry count: {entry_count} \nchunk: {'\n'.join(map(str, self.currentTrak.stco))}"
         
     def get_sidx_description(self, boxOffset, boxSize, box_data):
         description = "Segment Index Box (SIDX)\n"
@@ -672,7 +660,7 @@ class MP4ParserApp:
             description += f"第一帧 Flags: 0x{first_sample_flags:08X}\n"
         
         if self.currentTrak.timescale < 1:
-            user_input = simpledialog.askinteger("输入timescale数值", "请输入timeScale：（从init mp4读）")
+            user_input = simpledialog.askinteger("输入timescale数值", "请输入一个整数：")
             self.currentTrak.timescale=user_input
         description+=f"timescale:{self.currentTrak.timescale} duration:{self.currentTrak.duration}\n"
         startAddress = 0;
