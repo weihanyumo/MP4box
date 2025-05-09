@@ -71,11 +71,16 @@ class TRACK:
         # 汇总结果
         frames = []
         for i in range(len(self.stsz)):
+            flag="B-Frame"
+            if i+1 in self.stss:
+                flag="I-Frame"
+                
             frames.append({
                 'DTS': dts_list[i],
                 'PTS': pts_list[i],
                 'size': sizes[i],
-                'offset': offsets[i]
+                'offset': offsets[i],
+                'flag':flag
             })
 
         return frames
@@ -304,7 +309,7 @@ class MP4ParserApp:
             frames = track.calculate_frame_info()
             description += f"track {i+1} frame count: {len(frames)}\n"
             for j, frame in enumerate(frames):
-                description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}\n"
+                description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}, flag={frame['flag']}\n"
         return description
         
     def get_mvhd_description(self, box_data):
