@@ -685,7 +685,7 @@ class MP4ParserApp:
                 sample_info.append(f"Flags: 0x{sample_flags:08X}")
 
             if flags & 0x000800:
-                sample_cto = struct.unpack(">I", box_data[offset:offset+4])[0]
+                sample_cto = struct.unpack(">i", box_data[offset:offset+4])[0]
                 offset += 4
                 sample_info.append(f"time delta: {sample_cto}")
 
