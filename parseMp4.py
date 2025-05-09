@@ -351,6 +351,8 @@ class MP4ParserApp:
         elif version == 1:
             duration, = struct.unpack(">Q", box_data[offset:offset+8])
             offset += 8
+
+        self.duration = duration            
         description += (f"Duration: {duration}\n")
 
         return description
@@ -660,7 +662,7 @@ class MP4ParserApp:
             description += f"第一帧 Flags: 0x{first_sample_flags:08X}\n"
         
         if self.currentTrak.timescale < 1:
-            user_input = simpledialog.askinteger("输入timescale数值", "请输入一个整数：")
+            user_input = simpledialog.askinteger("输入timescale数值", "请输入一个整数(init mp4 中读取：")
             self.currentTrak.timescale=user_input
         description+=f"timescale:{self.currentTrak.timescale} duration:{self.currentTrak.duration}\n"
         startAddress = 0;
