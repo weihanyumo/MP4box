@@ -722,8 +722,11 @@ class MP4ParserApp:
         self.tracks.append(track)
         return track
     def get_tfhd_description(self, box_data):
-        track_id = struct.unpack('>I', box_data[0:4])[0]
-        flags = struct.unpack('>I', box_data[4:8])[0]
+        version_and_flags = box_data[:4]
+        version = version_and_flags[0]
+        flags = int.from_bytes(version_and_flags[1:4], byteorder='big')
+        
+        track_id = struct.unpack('>I', box_data[4:8])[0]
         description = f"track ID: {track_id}, flags: {flags}"
    
         self.currentTrak = self.get_or_create_track(track_id)
