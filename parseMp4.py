@@ -7,6 +7,8 @@ import io
 import sys
 import time
 from tkinter import simpledialog
+import uuid
+import time
 
 class TRACK:
     def __init__(self):
@@ -216,7 +218,7 @@ class MP4ParserApp:
         with open(file_path, 'rb') as file:
             offset = 0  # 追踪当前偏移量
             while True:
-                box_size, box_type, box_data, box_header = self.read_box(file, offset)
+                box_size, box_type, box_data, box_header = self.read_box(file)
                 if not box_size:
                     break  
                 description = self.get_box_description(offset, box_size, box_type, box_data)
@@ -227,18 +229,21 @@ class MP4ParserApp:
                 self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data)
                 offset += box_size  
 
-    def read_box(self, file, offset):
+    def read_box(self, file):
         box_header = file.read(8)
         if len(box_header) < 8:
+            print("read return null")
             return None, None, None, None
-
         box_size, box_type = struct.unpack('>I4s', box_header)
         box_type = box_type.decode('utf-8', errors='ignore')
 
         box_data = file.read(box_size - 8) if box_size > 8 else b''
-        #print(f"type:{box_type} size: {box_size} data_len: {len(box_data)}")
+        print(f"type:{box_type} size: {box_size} data_len: {len(box_data)}")
         return box_size, box_type, box_data, box_header
-
+        
+    def read_size(self, file, size):
+        return file.read(size)
+        
     def get_box_description(self, boxOffset, boxSize, box_type, box_data):
         if box_type == "ftyp":
             return self.get_ftyp_description(box_data)
@@ -258,6 +263,8 @@ class MP4ParserApp:
             return self.get_tkhd_description(box_data)
         elif box_type == "tfhd":
             return self.get_tfhd_description(box_data)
+        elif box_type == "tfdt":
+            return self.get_tfdt_description(box_data)
         elif box_type == "meta":
             return self.get_meta_description(box_data, boxSize)
         elif box_type == "mdat":
@@ -280,6 +287,8 @@ class MP4ParserApp:
             return self.get_stsc_description(box_data)
         elif box_type == "stco":
             return self.get_stco_description(box_data)
+        elif box_type == "sinf":
+            return self.get_sinf_description(box_data)
         elif box_type == "sidx":
             return self.get_sidx_description(boxOffset, boxSize, box_data)
         elif box_type == "udta":
@@ -292,6 +301,19 @@ class MP4ParserApp:
             return self.get_traf_description(boxOffset, box_data)
         elif box_type == "trun":
             return self.get_trun_description(boxOffset, box_data)
+        elif box_type == "trex":
+            return self.get_trex_description(boxOffset, box_data)
+        elif box_type == "pssh":
+            return self.get_pssh_description(box_data)
+        elif box_type=="saio":
+            return self.get_saio_descrption(box_data)
+        elif box_type == "saiz":
+            return self.get_saiz_description(box_data)
+        elif box_type == "senc":
+            return self.get_senc_description(box_data)
+        elif box_type == "encv":
+            return self.get_encv_description(box_data)
+            
         return f"未知的 Box 类型: {box_type}"
 
     def get_ftyp_description(self, box_data):
@@ -561,6 +583,9 @@ class MP4ParserApp:
             offset += 4
         return f"entry count: {entry_count} \nchunk: {'\n'.join(map(str, self.currentTrak.stco))}"
         
+    def get_sinf_description(self, box_data):
+        return "sinf"
+        
     def get_sidx_description(self, boxOffset, boxSize, box_data):
         description = "Segment Index Box (SIDX)\n"
 
@@ -602,7 +627,7 @@ class MP4ParserApp:
         description = "Movie Fragment Box\n"
         offset = 0 
         while offset < len(box_data):
-            box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data), offset)
+            box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data))
             description += f"子 Box 类型: {box_type}, 大小: {box_size}\n"
             if box_type == "mfhd":
                 description += self.get_mfhd_description(box_data)
@@ -632,12 +657,14 @@ class MP4ParserApp:
         offset = 0
         
         while offset < len(box_data):
-            box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data), offset)
+            box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data))
             description += f"子 Box 类型: {box_type}, 大小: {box_size}\n"
             if box_type == "tfhd":
                 description += self.get_tfhd_description(box_data)
             elif box_type == "trun":
                 description += self.get_trun_description(startPos, box_data)
+            elif box_type == "tfdt":
+                description += self.get_tfdt_description(box_data)
             offset += box_size
             startPos += box_size
         return description
@@ -704,7 +731,7 @@ class MP4ParserApp:
             samplePresentationTime = cumulativeTime + sample_cto - 0
             #edtsOffset;
             cumulativeTime += sample_duration;
-            sample_info.append(f"pts:{samplePresentationTime/self.currentTrak.timescale}")
+            sample_info.append(f"pts:{samplePresentationTime/self.currentTrak.timescale:.3f}")
 
             description += f"sample {i+1}: {', '.join(sample_info)}\n"
         description += f" bufferSize: {allbufferSize}"
@@ -721,25 +748,222 @@ class MP4ParserApp:
         track.trackID=track_id
         self.tracks.append(track)
         return track
+        
+    def get_trex_description(self,startPos,  box_data):
+        offset = 0
+        version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
+        track_id = struct.unpack(">I", box_data[offset+4:offset+8])[0]
+        default_sample_description_index = struct.unpack(">I", box_data[offset+8:offset+12])[0]
+        default_sample_duration = struct.unpack(">I", box_data[offset+12:offset+16])[0]
+        default_sample_size = struct.unpack(">I", box_data[offset+16:offset+20])[0]
+        default_sample_flags = struct.unpack(">I", box_data[offset+20:offset+24])[0]
+        
+        description = f"track_id: {track_id}"
+        description += f"default_sample_description_index: {default_sample_description_index}\n"
+        description += f"default_sample_duration: {default_sample_duration}\n"
+        self.currentTrak.duration = default_sample_duration
+        description += f"default_sample_size: {default_sample_size}\n"
+        description += f"default_sample_flags: {default_sample_flags}\n"
+        
+        return description
+        
+    def get_pssh_description(self, box_data):
+        offset = 0
+        version = box_data[offset+8]
+        flags = box_data[offset+9:offset+12]
+        system_id = uuid.UUID(bytes=box_data[offset+12:offset+28])
+        cursor = offset + 28
+
+        kids = []
+        if version == 1:
+            kid_count = struct.unpack(">I", box_data[cursor:cursor+4])[0]
+            cursor += 4
+            for _ in range(kid_count):
+                kid = uuid.UUID(bytes=box_data[cursor:cursor+16])
+                kids.append(str(kid))
+                cursor += 16
+
+        data_size = struct.unpack(">I", box_data[cursor:cursor+4])[0]
+        cursor += 4
+        pssh_data = box_data[cursor:cursor+data_size]
+
+        description = f"system_id: {system_id}\n"
+        description += f"kids: {kids}\n"
+        description += f"data: {box_data}\n"
+        return description
+    
+    def get_saiz_description(self, box_data):
+        offset = 0
+        start = offset
+
+        version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
+        version = (version_flags >> 24) & 0xFF
+        flags = version_flags & 0xFFFFFF
+        offset += 4
+
+        # Optional fields if flags & 1
+        if flags & 1:
+            aux_info_type = struct.unpack(">I", box_data[offset:offset+4])[0]
+            aux_info_param = struct.unpack(">I", box_data[offset+4:offset+8])[0]
+            offset += 8
+        else:
+            aux_info_type = None
+            aux_info_param = None
+
+        default_sample_info_size = struct.unpack(">B", box_data[offset:offset+1])[0]
+        offset += 1
+
+        sample_count = struct.unpack(">I", box_data[offset:offset+4])[0]
+        offset += 4
+
+        sample_sizes = []
+        if default_sample_info_size == 0:
+            for _ in range(sample_count):
+                sz = struct.unpack(">B", box_data[offset:offset+1])[0]
+                sample_sizes.append(sz)
+                offset += 1
+        else:
+            sample_sizes = [default_sample_info_size] * sample_count
+
+        description = f"version: {version}\n"
+        description += f"flags: {flags}\n"
+        description += f"aux_info_type: {aux_info_type}\n"
+        description += f"aux_info_param: {aux_info_param}\n"
+        description += f"default_sample_info_size: {default_sample_info_size}\n"
+        description += f"sample_count: {sample_count}\n"
+        description += f"sample_sizes: {sample_sizes}\n"
+        description += f"parsed_bytes: {offset - start}\n"
+        
+        return description
+    def get_saio_descrption(self, box_data):
+        offset = 0
+        start = offset
+
+        version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
+        version = (version_flags >> 24) & 0xFF
+        flags = version_flags & 0xFFFFFF
+        offset += 4
+
+        # Optional aux_info_type
+        if flags & 1:
+            aux_info_type = struct.unpack(">I", box_data[offset:offset+4])[0]
+            aux_info_param = struct.unpack(">I", box_data[offset+4:offset+8])[0]
+            offset += 8
+        else:
+            aux_info_type = None
+            aux_info_param = None
+
+        entry_count = struct.unpack(">I", box_data[offset:offset+4])[0]
+        offset += 4
+
+        offsets = []
+        for _ in range(entry_count):
+            if version == 0:
+                val = struct.unpack(">I", box_data[offset:offset+4])[0]
+                offset += 4
+            else:
+                val = struct.unpack(">Q", box_data[offset:offset+8])[0]
+                offset += 8
+            offsets.append(val)
+
+        description = f"version: {version}\n"
+        description += f"flags: {flags}\n"
+        description += f"aux_info_type: {aux_info_type}\n"
+        description += f"aux_info_param: {aux_info_param}\n"
+        description += f"entry_count: {entry_count}\n"
+        description += f"offsets: {offsets}\n"
+        description += f"parsed_bytes: {offset - start}\n"
+        
+        return description
+        
+    def get_senc_description(self, box_data):
+        offset = 0
+        start = offset
+       
+        version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
+        version = (version_flags >> 24) & 0xFF
+        flags = version_flags & 0xFFFFFF
+        offset += 4
+        description = f"version: {version} flags: {flags}\n"
+        
+        sample_count = struct.unpack(">I", box_data[offset:offset+4])[0]
+        offset += 4
+        description += f"sample_count: {sample_count}\n"
+        samples = []
+
+        for i in range(sample_count):
+            iv = box_data[offset:offset+8]
+            offset += 8
+            sample_entry = {
+                'index': i,
+                'iv': iv.hex(),
+            }
+            if flags & 0x02:
+                subsample_count = struct.unpack(">H", box_data[offset:offset+2])[0]
+                offset += 2
+                subsamples = []
+                for _ in range(subsample_count):
+                    clear, encrypted = struct.unpack(">HI", box_data[offset:offset+6])
+                    offset += 6
+                    subsamples.append({'clear': clear, 'encrypted': encrypted})
+                    description += f"iv: {iv} clear: {clear} encrypted: {encrypted}\n"
+                sample_entry['subsamples'] = subsamples
+            samples.append(sample_entry)
+        return description
+        
+    def get_encv_description(self, box_data):
+        return "encv"
+
     def get_tfhd_description(self, box_data):
         version_and_flags = box_data[:4]
         version = version_and_flags[0]
         flags = int.from_bytes(version_and_flags[1:4], byteorder='big')
         
         track_id = struct.unpack('>I', box_data[4:8])[0]
-        description = f"track ID: {track_id}, flags: {flags}"
+        description = f"track ID: {track_id}, flags: {flags}\n"
    
         self.currentTrak = self.get_or_create_track(track_id)
-        
-        if flags & 0x00000001: 
-            default_sample_duration = struct.unpack('>I', box_data[8:12])[0]
-            self.currentTrak.duration = default_sample_duration
-            description += f", default sample duration: {default_sample_duration}"
 
-        if flags & 0x00000002: 
+        if flags & 0x000001:
+            base_data_offset = struct.unpack(">Q", box_data[8:8+8])[0]
+            description =+ f"base_data_offset:{base_data_offset}\n"
+        if flags & 0x000002:
+            sample_description_index = struct.unpack(">I", box_data[8:8+4])[0]
+            description +=f"sample_description_index: {sample_description_index}\n"
+        if flags & 0x000008:
+            default_sample_duration = struct.unpack('>I', box_data[8:12])[0]
+            if self.currentTrak.duration < 1:
+                self.currentTrak.duration = default_sample_duration
+            description += f", default sample duration: {default_sample_duration}\n"
+        if flags & 0x000010:
+            default_sample_size = struct.unpack(">I", box_data[8:8+4])[0]
+            description+=f"default_sample_size: {default_sample_size}\n"
+        if flags & 0x000020:
             default_sample_size = struct.unpack('>I', box_data[12:16])[0]
             description += f", 默认样本大小: {default_sample_size}"
+            
+        return description
+        
+    import struct
 
+    def get_tfdt_description(self, box_data):
+        offset=0
+        version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
+        version = (version_flags >> 24) & 0xFF
+        
+        flags = version_flags & 0xFFFFFF
+        offset += 4
+        description = f"version: {version} flags: {flags}\n"
+        base_decode_time = 0
+        if version == 1:
+            base_decode_time = struct.unpack(">Q", box_data[offset:offset+8])[0]
+            offset += 8
+        else:
+            base_decode_time = struct.unpack(">I", data[offset:offset+4])[0]
+            offset += 4
+
+        description += f"base_decode_time: {base_decode_time}\n"
+        
         return description
 
     def get_vmhd_description(self, box_data):
@@ -770,20 +994,24 @@ class MP4ParserApp:
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
         start_address = f"{offset:d}"
         item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
-        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta']:
+        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd']:
             nested_offset = offset + 8  
             if box_type == 'meta':
                 nested_offset = offset + 12
                 box_data = box_data[4:]
+            if box_type == 'stsd':
+                nested_offset = offset + 16
+                box_data = box_data[8:]
             self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
         self.box_descriptions[item_id] = description  
         self.box_hex_data[item_id] = hex_data 
         if box_type == 'mdat':
             self.mdat_item_id = item_id;
+            
 
     def read_nested_boxes(self, box_file, offset, parent_id):
         while True:
-            box_size, box_type, box_data, box_header = self.read_box(box_file, offset)
+            box_size, box_type, box_data, box_header = self.read_box(box_file)
             if not box_size:
                 break
             description = self.get_box_description( offset, box_size, box_type, box_data)
@@ -802,8 +1030,16 @@ class MP4ParserApp:
             return lines
         for i in range(0, len(box_data), 16):
             chunk = box_data[i:i+16]
-            hex_part = ' '.join(f"{byte:02X}" for byte in chunk)
-            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk)
+            chunk1 = box_data[i:i+8]
+            chunk2 = box_data[i+8:i+16]
+            
+            hex_part = ' '.join(f"{byte:02X}" for byte in chunk1)
+            hex_part += "  "
+            hex_part += ' '.join(f"{byte:02X}" for byte in chunk2)
+            
+            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk1)
+            ascii_part += "  "
+            ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
             lines.append(f"{hex_part:<48}  {ascii_part}")
         return '\n'.join(lines)
 
