@@ -959,7 +959,7 @@ class MP4ParserApp:
             base_decode_time = struct.unpack(">Q", box_data[offset:offset+8])[0]
             offset += 8
         else:
-            base_decode_time = struct.unpack(">I", data[offset:offset+4])[0]
+            base_decode_time = struct.unpack(">I", box_data[offset:offset+4])[0]
             offset += 4
 
         description += f"base_decode_time: {base_decode_time}\n"
