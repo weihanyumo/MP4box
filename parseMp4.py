@@ -232,13 +232,13 @@ class MP4ParserApp:
     def read_box(self, file):
         box_header = file.read(8)
         if len(box_header) < 8:
-            print("read return null")
+            #print("read return null")
             return None, None, None, None
         box_size, box_type = struct.unpack('>I4s', box_header)
         box_type = box_type.decode('utf-8', errors='ignore')
 
         box_data = file.read(box_size - 8) if box_size > 8 else b''
-        print(f"type:{box_type} size: {box_size} data_len: {len(box_data)}")
+        #print(f"type:{box_type} size: {box_size} data_len: {len(box_data)}")
         return box_size, box_type, box_data, box_header
         
     def read_size(self, file, size):
