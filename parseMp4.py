@@ -311,8 +311,12 @@ class MP4ParserApp:
             return self.get_saiz_description(box_data)
         elif box_type == "senc":
             return self.get_senc_description(box_data)
-        elif box_type == "encv":
-            return self.get_encv_description(box_data)
+        elif box_type in ('avc1', 'hev1', 'vp09'):
+            return self.get_visual_sample_entry(box_data)
+        elif box_type in ('mp4a', 'ac-3', 'ec-3'):
+            return self.get_audio_sample_entry(box_data)
+        elif box_type in ('encv', 'enca'):
+            return self.get_encrypted_sample_entry(box_data)
             
         return f"未知的 Box 类型: {box_type}"
 
@@ -835,6 +839,7 @@ class MP4ParserApp:
         description += f"parsed_bytes: {offset - start}\n"
         
         return description
+        
     def get_saio_descrption(self, box_data):
         offset = 0
         start = offset
@@ -903,6 +908,8 @@ class MP4ParserApp:
                 offset += 2
                 subsamples = []
                 for _ in range(subsample_count):
+                    if offset + 6 > len(box_data):
+                        return description
                     clear, encrypted = struct.unpack(">HI", box_data[offset:offset+6])
                     offset += 6
                     subsamples.append({'clear': clear, 'encrypted': encrypted})
@@ -911,8 +918,200 @@ class MP4ParserApp:
             samples.append(sample_entry)
         return description
         
-    def get_encv_description(self, box_data):
-        return "encv"
+        
+    def get_visual_sample_entry(self, box_data):
+        """解析视频类样本条目(avc1, hev1等)"""
+        start_pos=0
+        pos = start_pos + 8
+        
+        # 解析固定字段
+        reserved = box_data[pos:pos+6]
+        pos += 6
+        data_ref_index = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        
+        # 视频特定字段
+        version = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        revision = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        vendor = struct.unpack('>I', box_data[pos:pos+4])[0]
+        pos += 4
+        temporal_quality = struct.unpack('>I', box_data[pos:pos+4])[0]
+        pos += 4
+        spatial_quality = struct.unpack('>I', box_data[pos:pos+4])[0]
+        pos += 4
+        width = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        height = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        
+        # 返回解析结果和剩余数据位置
+        return {
+            'type': 'visual',
+            'data_ref_index': data_ref_index,
+            'width': width,
+            'height': height,
+            'version': version,
+            'vendor': vendor
+        }, pos
+
+    def get_audio_sample_entry(self, box_data ):
+        start_pos=0
+        pos = start_pos + 8  # 跳过样本条目头部
+        
+        # 解析固定字段
+        reserved = box_data[pos:pos+6]
+        pos += 6
+        data_ref_index = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        
+        # 音频特定字段
+        version = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        revision = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        vendor = struct.unpack('>I', box_data[pos:pos+4])[0]
+        pos += 4
+        channels = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        sample_size = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        compression_id = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        packet_size = struct.unpack('>H', box_data[pos:pos+2])[0]
+        pos += 2
+        sample_rate = struct.unpack('>I', box_data[pos:pos+4])[0] >> 16
+        pos += 4
+        
+        return {
+            'type': 'audio',
+            'data_ref_index': data_ref_index,
+            'channels': channels,
+            'sample_size': sample_size,
+            'sample_rate': sample_rate,
+            'version': version,
+            'vendor': vendor
+        }
+
+    def get_encrypted_sample_entry(self, box_data):
+        start_pos=0
+        pos = start_pos 
+        
+        # 加密样本条目的特殊字段
+        original_format = box_data[pos:pos+4].decode('ascii')
+        pos += 4
+        
+        # 初始化返回结构
+        entry = {
+            'type': 'encrypted',
+            'original_format': original_format,
+            'protection_info': None
+        }
+        
+        # 解析sinf保护信息盒子
+        while pos < start_pos + struct.unpack('>I', box_data[start_pos:start_pos+4])[0]:
+            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
+            box_type = box_data[pos+4:pos+8].decode('ascii')
+            
+            if box_type == 'sinf':
+                entry['protection_info'] = parse_sinf_box(box_data[pos:pos+box_size])
+            
+            pos += box_size
+        
+        return entry, pos
+
+    
+    def parse_sinf_box(box_data):
+        """解析保护方案信息盒子"""
+        pos = 0  # 跳过box头部
+        sinf_info = {}
+        
+        while pos < len(box_data):
+            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
+            box_type = box_data[pos+4:pos+8].decode('ascii')
+            
+            if box_type == 'frma':
+                sinf_info['original_format'] = box_data[pos+8:pos+12].decode('ascii')
+            elif box_type == 'schm':
+                sinf_info['scheme_type'] = box_data[pos+8:pos+12].decode('ascii')
+                sinf_info['scheme_version'] = struct.unpack('>I', box_data[pos+12:pos+16])[0]
+            elif box_type == 'schi':
+                sinf_info['scheme_info'] = parse_schi_box(box_data[pos:pos+box_size])
+            
+            pos += box_size
+        
+        return sinf_info
+
+    def parse_schi_box(box_data):
+        """解析方案信息盒子"""
+        pos = 8  # 跳过box头部
+        schi_info = {}
+        
+        while pos < len(box_data):
+            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
+            box_type = box_data[pos+4:pos+8].decode('ascii')
+            
+            if box_type == 'tenc':
+                schi_info['track_encryption'] = parse_tenc_box(box_data[pos:pos+box_size])
+            elif box_type == 'pssh':
+                if 'pssh_boxes' not in schi_info:
+                    schi_info['pssh_boxes'] = []
+                schi_info['pssh_boxes'].append(parse_pssh_box(box_data[pos:pos+box_size]))
+            
+            pos += box_size
+        
+        return schi_info
+
+    def parse_tenc_box(box_data):
+        """解析轨道加密盒子"""
+        pos = 8  # 跳过box头部
+        version = box_data[pos]
+        pos += 1
+        flags = box_data[pos:pos+3]
+        pos += 3
+        
+        tenc_info = {
+            'version': version,
+            'default_is_encrypted': box_data[pos],
+            'default_iv_size': box_data[pos+1],
+            'default_kid': box_data[pos+4:pos+20].hex()
+        }
+        
+        return tenc_info
+
+    def parse_pssh_box(box_data):
+        """解析保护系统特定头盒子"""
+        pos = 8  # 跳过box头部
+        version = box_data[pos]
+        pos += 1
+        flags = box_data[pos:pos+3]
+        pos += 3
+        
+        system_id = box_data[pos:pos+16].hex()
+        pos += 16
+        
+        if version > 0:
+            kid_count = struct.unpack('>I', box_data[pos:pos+4])[0]
+            pos += 4
+            kids = []
+            for _ in range(kid_count):
+                kids.append(box_data[pos:pos+16].hex())
+                pos += 16
+        
+        data_size = struct.unpack('>I', box_data[pos:pos+4])[0]
+        pos += 4
+        pssh_data = box_data[pos:pos+data_size]
+        
+        return {
+            'version': version,
+            'system_id': system_id,
+            'kids': kids if version > 0 else None,
+            'data': pssh_data
+        }
+
+
+
 
     def get_tfhd_description(self, box_data):
         version_and_flags = box_data[:4]
@@ -943,8 +1142,6 @@ class MP4ParserApp:
             description += f", 默认样本大小: {default_sample_size}"
             
         return description
-        
-    import struct
 
     def get_tfdt_description(self, box_data):
         offset=0
@@ -967,14 +1164,6 @@ class MP4ParserApp:
         return description
 
     def get_vmhd_description(self, box_data):
-        """
-        1	version	版本号，通常是 0
-        3	flags	标志位，一般为 1 表示图像需要合成
-        2	graphicsmode	图像合成模式，0 表示直接拷贝
-        2	opcolor[0]	红色通道的默认合成值
-        2	opcolor[1]	绿色通道的默认合成值
-        2	opcolor[2]	蓝色通道的默认合成值
-        """
         version, flags, graphicsmode, red, green, blue = struct.unpack(">B3s2H2H", box_data)
         return f"version: {version}, flags: {flags}, graphics mode: {graphicsmode}, opcolor: ({red}, {green}, {blue})"
     
@@ -1001,13 +1190,13 @@ class MP4ParserApp:
                 box_data = box_data[4:]
             if box_type == 'stsd':
                 nested_offset = offset + 16
+                print(f"stsd entry count: {struct.unpack('>I', box_data[4:4+4])}\n")
                 box_data = box_data[8:]
             self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
         self.box_descriptions[item_id] = description  
         self.box_hex_data[item_id] = hex_data 
         if box_type == 'mdat':
             self.mdat_item_id = item_id;
-            
 
     def read_nested_boxes(self, box_file, offset, parent_id):
         while True:
@@ -1043,7 +1232,12 @@ class MP4ParserApp:
             lines.append(f"{hex_part:<48}  {ascii_part}")
         return '\n'.join(lines)
 
-        
+
+
+"""
+main
+"""
+       
 app = None
 g_fileName = ""
 
