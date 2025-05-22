@@ -311,12 +311,13 @@ class MP4ParserApp:
             return self.get_saiz_description(box_data)
         elif box_type == "senc":
             return self.get_senc_description(box_data)
-        elif box_type in ('avc1', 'hev1', 'vp09'):
-            return self.get_visual_sample_entry(box_data)
-        elif box_type in ('mp4a', 'ac-3', 'ec-3'):
-            return self.get_audio_sample_entry(box_data)
+        elif box_type=="tenc":
+            return self.get_tenc_descrition(box_data)
+        elif box_type=="mdcv":
+            return self.get_mdcv_description(box_data)
         elif box_type in ('encv', 'enca'):
             return self.get_encrypted_sample_entry(box_data)
+          
             
         return f"未知的 Box 类型: {box_type}"
 
@@ -918,201 +919,6 @@ class MP4ParserApp:
             samples.append(sample_entry)
         return description
         
-        
-    def get_visual_sample_entry(self, box_data):
-        """解析视频类样本条目(avc1, hev1等)"""
-        start_pos=0
-        pos = start_pos + 8
-        
-        # 解析固定字段
-        reserved = box_data[pos:pos+6]
-        pos += 6
-        data_ref_index = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        
-        # 视频特定字段
-        version = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        revision = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        vendor = struct.unpack('>I', box_data[pos:pos+4])[0]
-        pos += 4
-        temporal_quality = struct.unpack('>I', box_data[pos:pos+4])[0]
-        pos += 4
-        spatial_quality = struct.unpack('>I', box_data[pos:pos+4])[0]
-        pos += 4
-        width = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        height = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        
-        # 返回解析结果和剩余数据位置
-        return {
-            'type': 'visual',
-            'data_ref_index': data_ref_index,
-            'width': width,
-            'height': height,
-            'version': version,
-            'vendor': vendor
-        }, pos
-
-    def get_audio_sample_entry(self, box_data ):
-        start_pos=0
-        pos = start_pos + 8  # 跳过样本条目头部
-        
-        # 解析固定字段
-        reserved = box_data[pos:pos+6]
-        pos += 6
-        data_ref_index = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        
-        # 音频特定字段
-        version = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        revision = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        vendor = struct.unpack('>I', box_data[pos:pos+4])[0]
-        pos += 4
-        channels = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        sample_size = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        compression_id = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        packet_size = struct.unpack('>H', box_data[pos:pos+2])[0]
-        pos += 2
-        sample_rate = struct.unpack('>I', box_data[pos:pos+4])[0] >> 16
-        pos += 4
-        
-        return {
-            'type': 'audio',
-            'data_ref_index': data_ref_index,
-            'channels': channels,
-            'sample_size': sample_size,
-            'sample_rate': sample_rate,
-            'version': version,
-            'vendor': vendor
-        }
-
-    def get_encrypted_sample_entry(self, box_data):
-        start_pos=0
-        pos = start_pos 
-        
-        # 加密样本条目的特殊字段
-        original_format = box_data[pos:pos+4].decode('ascii')
-        pos += 4
-        
-        # 初始化返回结构
-        entry = {
-            'type': 'encrypted',
-            'original_format': original_format,
-            'protection_info': None
-        }
-        
-        # 解析sinf保护信息盒子
-        while pos < start_pos + struct.unpack('>I', box_data[start_pos:start_pos+4])[0]:
-            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
-            box_type = box_data[pos+4:pos+8].decode('ascii')
-            
-            if box_type == 'sinf':
-                entry['protection_info'] = parse_sinf_box(box_data[pos:pos+box_size])
-            
-            pos += box_size
-        
-        return entry, pos
-
-    
-    def parse_sinf_box(box_data):
-        """解析保护方案信息盒子"""
-        pos = 0  # 跳过box头部
-        sinf_info = {}
-        
-        while pos < len(box_data):
-            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
-            box_type = box_data[pos+4:pos+8].decode('ascii')
-            
-            if box_type == 'frma':
-                sinf_info['original_format'] = box_data[pos+8:pos+12].decode('ascii')
-            elif box_type == 'schm':
-                sinf_info['scheme_type'] = box_data[pos+8:pos+12].decode('ascii')
-                sinf_info['scheme_version'] = struct.unpack('>I', box_data[pos+12:pos+16])[0]
-            elif box_type == 'schi':
-                sinf_info['scheme_info'] = parse_schi_box(box_data[pos:pos+box_size])
-            
-            pos += box_size
-        
-        return sinf_info
-
-    def parse_schi_box(box_data):
-        """解析方案信息盒子"""
-        pos = 8  # 跳过box头部
-        schi_info = {}
-        
-        while pos < len(box_data):
-            box_size = struct.unpack('>I', box_data[pos:pos+4])[0]
-            box_type = box_data[pos+4:pos+8].decode('ascii')
-            
-            if box_type == 'tenc':
-                schi_info['track_encryption'] = parse_tenc_box(box_data[pos:pos+box_size])
-            elif box_type == 'pssh':
-                if 'pssh_boxes' not in schi_info:
-                    schi_info['pssh_boxes'] = []
-                schi_info['pssh_boxes'].append(parse_pssh_box(box_data[pos:pos+box_size]))
-            
-            pos += box_size
-        
-        return schi_info
-
-    def parse_tenc_box(box_data):
-        """解析轨道加密盒子"""
-        pos = 8  # 跳过box头部
-        version = box_data[pos]
-        pos += 1
-        flags = box_data[pos:pos+3]
-        pos += 3
-        
-        tenc_info = {
-            'version': version,
-            'default_is_encrypted': box_data[pos],
-            'default_iv_size': box_data[pos+1],
-            'default_kid': box_data[pos+4:pos+20].hex()
-        }
-        
-        return tenc_info
-
-    def parse_pssh_box(box_data):
-        """解析保护系统特定头盒子"""
-        pos = 8  # 跳过box头部
-        version = box_data[pos]
-        pos += 1
-        flags = box_data[pos:pos+3]
-        pos += 3
-        
-        system_id = box_data[pos:pos+16].hex()
-        pos += 16
-        
-        if version > 0:
-            kid_count = struct.unpack('>I', box_data[pos:pos+4])[0]
-            pos += 4
-            kids = []
-            for _ in range(kid_count):
-                kids.append(box_data[pos:pos+16].hex())
-                pos += 16
-        
-        data_size = struct.unpack('>I', box_data[pos:pos+4])[0]
-        pos += 4
-        pssh_data = box_data[pos:pos+data_size]
-        
-        return {
-            'version': version,
-            'system_id': system_id,
-            'kids': kids if version > 0 else None,
-            'data': pssh_data
-        }
-
-
-
-
     def get_tfhd_description(self, box_data):
         version_and_flags = box_data[:4]
         version = version_and_flags[0]
@@ -1179,19 +985,397 @@ class MP4ParserApp:
     def get_ilst_description(self, box_data, box_length):
         return "Item List Box (ILST)"
         
+    def get_tenc_descrition(self, box_data):
+        if len(box_data) < 24: return
+            
+        # 加密参数
+        encrypted_flags = box_data[0]
+        is_encrypted = (encrypted_flags >> 7) & 0x01
+        iv_size = encrypted_flags & 0x0F
+        
+        # 打印警告
+        if iv_size not in [0, 8, 16]:
+            print(f"⚠️ 异常IV大小: {iv_size} (标准值为0/8/16)")
+        
+        # KID解析
+        kid = box_data[5:21].hex()
+        
+        # 输出结果
+        return (f"""
+        加密: {'是' if is_encrypted else '否'}
+        IV大小: {iv_size} bytes
+        KID: {kid}
+        附加数据: {box_data[34:].decode('ascii', errors='replace')}
+        """)
+    
+    def get_mdcv_description(self, box_data):
+        if len(box_data) < 24:
+            print("not engouh mdcv data")
+            return "not data"
+    
+        # 解析色度坐标 (u16.16格式)
+        def parse_chromaticity(byte_pair):
+            value = struct.unpack('>H', byte_pair)[0]
+            return round(value / 50000, 3)
+        
+        # 解析亮度值 (u16.16格式)
+        def parse_luminance(byte_quad):
+            value = struct.unpack('>I', byte_quad)[0]
+            return round(value / 10000, 4)
+        
+        # 提取数据
+        r_x = parse_chromaticity(box_data[0:2])
+        r_y = parse_chromaticity(box_data[2:4])
+        g_x = parse_chromaticity(box_data[4:6])
+        g_y = parse_chromaticity(box_data[6:8])
+        b_x = parse_chromaticity(box_data[8:10])
+        b_y = parse_chromaticity(box_data[10:12])
+        w_x = parse_chromaticity(box_data[12:14])
+        w_y = parse_chromaticity(box_data[14:16])
+        max_lum = parse_luminance(box_data[16:20])
+        min_lum = parse_luminance(box_data[20:24])
+        
+        desc = f"""Mastering Display Color Volume
+        --------------------------
+        Red Primary:   ({r_x:.3f}, {r_y:.3f})
+        Green Primary: ({g_x:.3f}, {g_y:.3f})
+        Blue Primary:  ({b_x:.3f}, {b_y:.3f})
+        White Point:   ({w_x:.3f}, {w_y:.3f})
+        Luminance:     {min_lum:.4f} ~ {max_lum:.4f} nits
+        """
+        return desc
+        
+    def parse_hvcc(self, hvcc_data, offset, parent_id):
+        """解析 HEVC 配置 (hvcC) box"""
+        if len(hvcc_data) < 23:  # hvcC 最小长度
+            return
 
+        # 解析基础头信息
+        config_version = hvcc_data[0]
+        profile_space = (hvcc_data[1] >> 6) & 0x03
+        tier_flag = (hvcc_data[1] >> 5) & 0x01
+        profile_idc = hvcc_data[1] & 0x1F
+        profile_compatibility = struct.unpack('>I', b'\x00' + hvcc_data[2:5])[0]
+        level_idc = hvcc_data[5]
+        min_spatial_segmentation = struct.unpack('>H', hvcc_data[6:8])[0] & 0x0FFF
+        parallelism_type = hvcc_data[8] & 0x03
+        chroma_format = hvcc_data[9] & 0x03
+        bit_depth_luma = (hvcc_data[10] & 0x07) + 8
+        bit_depth_chroma = (hvcc_data[11] & 0x07) + 8
+        avg_frame_rate = struct.unpack('>H', hvcc_data[12:14])[0]
+        
+        # 解析 NAL 单元类型
+        num_arrays = hvcc_data[22]
+        pos = 23
+        
+        # 解析 VPS/SPS/PPS 等参数集
+        vps_list, sps_list, pps_list = [], [], []
+        for _ in range(num_arrays):
+            if pos + 3 > len(hvcc_data):
+                break
+                
+            array_type = hvcc_data[pos] & 0x3F
+            num_units = struct.unpack('>H', hvcc_data[pos+1:pos+3])[0]
+            pos += 3
+            
+            for _ in range(num_units):
+                if pos + 2 > len(hvcc_data):
+                    break
+                unit_size = struct.unpack('>H', hvcc_data[pos:pos+2])[0]
+                pos += 2
+                if pos + unit_size > len(hvcc_data):
+                    break
+                    
+                unit_data = hvcc_data[pos:pos+unit_size]
+                if array_type == 0x20:  # VPS
+                    vps_list.append(unit_data)
+                elif array_type == 0x21:  # SPS
+                    sps_list.append(unit_data)
+                elif array_type == 0x22:  # PPS
+                    pps_list.append(unit_data)
+                pos += unit_size
+
+        # 构建描述信息
+        desc = f"HEVC Configuration Box\n" \
+               f"Version: {config_version}\n" \
+               f"Profile: space={profile_space} tier={tier_flag} idc={profile_idc}\n" \
+               f"Compatibility: {profile_compatibility:032b}\n" \
+               f"Level: {level_idc}\n" \
+               f"Chroma: {chroma_format} ({['mono','4:2:0','4:2:2','4:4:4'][chroma_format]})\n" \
+               f"Bit Depth: Luma={bit_depth_luma}, Chroma={bit_depth_chroma}\n" \
+               f"VPS: {len(vps_list)}, SPS: {len(sps_list)}, PPS: {len(pps_list)}"
+
+        # 添加到树形视图
+        item_id = self.tree.insert(parent_id, "end", text="hvcC Box", 
+                                 values=("hvcC", f"{offset}", len(hvcc_data), desc))
+        
+        # 可选：添加参数集详细信息
+        if vps_list:
+            self._add_parameter_sets(item_id, "VPS", vps_list, offset + pos)
+        if sps_list:
+            self._add_parameter_sets(item_id, "SPS", sps_list, offset + pos)
+        if pps_list:
+            self._add_parameter_sets(item_id, "PPS", pps_list, offset + pos)
+        
+        self.box_descriptions[item_id] = desc
+        self.box_hex_data[item_id] = self.get_hex_data(hvcc_data, "hvcC")
+
+    def _add_parameter_sets(self, parent_id, name, param_sets, base_offset):
+        """添加参数集详细信息"""
+        for i, data in enumerate(param_sets):
+            item_id = self.tree.insert(parent_id, "end", 
+                                     text=f"{name} {i+1}",
+                                     values=(f"{name}", f"{base_offset}", len(data), 
+                                            f"{name} {i+1} (Size: {len(data)})"))
+            self.box_hex_data[item_id] = self.get_hex_data(data, name)
+            base_offset += len(data)
+      
+    def parse_stsd_box(self, box_type, box_size, box_data, offset, description, hex_data, item_id):
+        start_address = f"{offset:d}"
+        version_and_flags = struct.unpack('>I', box_data[:4])[0]
+        entry_count = struct.unpack('>I', box_data[4:8])[0]
+      
+        description = f"Sample Description Box\nVersion: {(version_and_flags >> 24) & 0xFF}\n" \
+                     f"Flags: {version_and_flags & 0xFFFFFF}\nEntry Count: {entry_count}"
+        self.tree.item(item_id, values=(box_type, start_address, box_size, description))
+        box_data = box_data[8:]
+        nested_offset = offset + 16
+        entry_offset = nested_offset
+        remaining_data = box_data
+        for i in range(entry_count):
+            if len(remaining_data) < 8:
+                break
+                
+            entry_size = struct.unpack('>I', remaining_data[:4])[0]
+            entry_type = remaining_data[4:8].decode('ascii')
+            entry_desc = f"Sample Entry {i+1}\nType: {entry_type}\nSize: {entry_size}"
+            entry_id = self.tree.insert(item_id, "end", text=f"{entry_type} Box", 
+                                      values=(entry_type, f"{entry_offset}", entry_size, entry_desc))
+            self.box_descriptions[entry_id] = entry_desc  
+            self.box_hex_data[entry_id] = self.get_hex_data(remaining_data[:entry_size], box_type) 
+            
+            if len(remaining_data) >= entry_size:
+                self.parse_sample_entry(entry_type, remaining_data[:entry_size], entry_offset, entry_id)
+                
+            remaining_data = remaining_data[entry_size:]
+            entry_offset += entry_size
+            
+        self.box_descriptions[item_id] = description  
+        self.box_hex_data[item_id] = hex_data 
+        
+    def parse_sample_entry(self, entry_type, entry_data, offset, parent_id):
+        """ 统一处理所有 sample entry 类型"""
+        if len(entry_data) < 16:
+            return
+      
+        # 公共头部 (8字节: size + type, 6字节保留)
+        reserved = struct.unpack('>6B', entry_data[8:14])
+        data_reference_index = struct.unpack('>H', entry_data[14:16])[0]
+        
+        base_desc = f"Data Reference Index: {data_reference_index}\nReserved: {reserved}"
+        
+        # 根据不同类型调用特定解析方法
+        if entry_type in ['avc1', 'hvc1', 'hev1']:  # 视频
+            self.parse_video_sample_entry(entry_type, entry_data, offset, parent_id, base_desc)
+        elif entry_type in ['mp4a', 'enca']:  # 音频
+            self.parse_audio_sample_entry(entry_type, entry_data, offset, parent_id, base_desc)
+        elif entry_type == 'encv':  # 编码视频
+            self.parse_encv_sample_entry(entry_data, offset, parent_id, base_desc)
+        elif entry_type == 'avcC':  # AVC 配置
+            self.parse_avcc(entry_data, offset, parent_id)
+        elif entry_type == 'hvcC':  # HEVC 配置
+            self.parse_hvcc(entry_data, offset, parent_id)
+        elif entry_type == 'esds':  # ES 描述
+            self.parse_esds(entry_data, offset, parent_id)
+        else:
+            # 未知类型的默认处理
+            desc = f"{base_desc}\nUnknown Sample Entry Type: {entry_type}"
+            self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
+                                          self.tree.item(parent_id, 'values')[1], 
+                                          self.tree.item(parent_id, 'values')[2], 
+                                          desc))
+            if len(entry_data) > 16:
+                self.read_nested_boxes(io.BytesIO(entry_data[16:]), offset + 16, parent_id)
+
+    def parse_encv_sample_entry(self, entry_data, offset, parent_id, base_desc):
+        """解析 encv (Encoded Video) sample entry"""
+        if len(entry_data) < 78:  # encv 最小大小
+            return
+        print("encv entry\n")
+        print(f"box len: {len(entry_data)}")
+            
+        # 解析视频信息
+        entry_data = entry_data[16:]
+        width, height = struct.unpack('>HH', entry_data[16:20])
+        print(f"wh:{width} {height}")
+        horizres, vertres = struct.unpack('>II', entry_data[20:28])
+        print(f"hv:{horizres} {vertres}")
+        frame_count = entry_data[28]
+        #compressor_name = entry_data[29:61].decode('utf-8').strip('\x00')
+        depth = entry_data[61]
+        #codec_name = entry_data[62:78].decode('utf-8').strip('\x00')
+        # 更新描述
+        desc = f"{base_desc}\nEncoded Video Sample Entry\n" \
+               f"Width: {width}, Height: {height}\n" \
+               f"Resolution: {horizres/0x10000:.2f}x{vertres/0x10000:.2f}\n" \
+               f"Frame Count: {frame_count}\n" \
+               f"Depth: {depth}\n"
+        self.box_descriptions[parent_id] = desc;
+        
+        self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
+                                      self.tree.item(parent_id, 'values')[1], 
+                                      self.tree.item(parent_id, 'values')[2], 
+                                      desc))
+        
+        
+        # 解析可能的保护方案信息 (sinf box) 或其他子 box
+        if len(entry_data) > 70:
+            remaining_data = entry_data[70:]
+            if len(remaining_data) >= 8 and remaining_data[4:8] == b'sinf':
+                self.parse_sinf_box(remaining_data, offset + 78, parent_id)
+            else:
+                self.read_nested_boxes(io.BytesIO(remaining_data), offset + 78, parent_id)
+
+    def parse_video_sample_entry(self, entry_type, entry_data, offset, parent_id, base_desc):
+        """解析视频 sample entry"""
+        if len(entry_data) < 86:
+            return
+            
+        # 视频 sample entry 的固定部分 (16字节头部 + 70字节视频信息)
+        video_info = struct.unpack('>16H', entry_data[16:48])
+        width, height = video_info[0], video_info[1]
+        horizres, vertres = struct.unpack('>2I', entry_data[48:56])
+        frame_count = entry_data[56]
+        depth = entry_data[89]
+        
+        # 更新描述
+        desc = f"{base_desc}\nVideo Sample Entry\n" \
+               f"Width: {width}, Height: {height}\n" \
+               f"Resolution: {horizres/0x10000}x{vertres/0x10000}\n" \
+               f"Frame Count: {frame_count}\n" \
+               f"Depth: {depth}"
+        
+        self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
+                                        self.tree.item(parent_id, 'values')[1], 
+                                        self.tree.item(parent_id, 'values')[2], 
+                                        desc))
+        
+        # 解析可能的 codec 配置 box (avcC, hvcC 等)
+        if len(entry_data) > 86:
+            self.read_nested_boxes(io.BytesIO(entry_data[86:]), offset + 86, parent_id)
+
+    def parse_audio_sample_entry(self, entry_type, entry_data, offset, parent_id, base_desc):
+        """解析音频 sample entry"""
+        if len(entry_data) < 28:
+            return
+            
+        # 音频 sample entry 的固定部分 (16字节头部 + 12字节音频信息)
+        version = struct.unpack('>H', entry_data[16:18])[0]
+        revision = struct.unpack('>H', entry_data[18:20])[0]
+        vendor = struct.unpack('>I', entry_data[20:24])[0]
+        channels, sample_size = struct.unpack('>HH', entry_data[24:28])
+        compression_id = struct.unpack('>H', entry_data[28:30])[0]
+        packet_size = struct.unpack('>H', entry_data[30:32])[0]
+        sample_rate = struct.unpack('>I', entry_data[32:36])[0] >> 16
+        
+        # 更新描述
+        desc = f"{base_desc}\nAudio Sample Entry\n" \
+               f"Version: {version}, Revision: {revision}\n" \
+               f"Vendor: {vendor}\n" \
+               f"Channels: {channels}, Sample Size: {sample_size} bits\n" \
+               f"Compression ID: {compression_id}\n" \
+               f"Packet Size: {packet_size}\n" \
+               f"Sample Rate: {sample_rate} Hz"
+        
+        self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
+                                        self.tree.item(parent_id, 'values')[1], 
+                                        self.tree.item(parent_id, 'values')[2], 
+                                        desc))
+        
+        # 解析可能的 codec 配置 box (esds 等)
+        if len(entry_data) > 36:
+            self.read_nested_boxes(io.BytesIO(entry_data[36:]), offset + 36, parent_id)
+
+    def parse_avcc(self, data, offset, parent_id):
+        if len(data) < 10: return
+        
+        # 解析基础头信息
+        config_version = data[0]
+        profile = data[1]
+        compatibility = data[2]
+        level = data[3]
+        nalu_size = (data[4] & 0x03) + 1
+        sps_count = data[5] & 0x1F
+
+        # 解析SPS
+        sps_list = []
+        pos = 6
+        for _ in range(sps_count):
+            if pos + 2 > len(data): break
+            sps_len = struct.unpack('>H', data[pos:pos+2])[0]
+            pos += 2
+            if pos + sps_len > len(data): break
+            sps_list.append(data[pos:pos+sps_len])
+            pos += sps_len
+
+        # 解析PPS
+        pps_count = data[pos] if pos < len(data) else 0
+        pos += 1
+        pps_list = []
+        for _ in range(pps_count):
+            if pos + 2 > len(data): break
+            pps_len = struct.unpack('>H', data[pos:pos+2])[0]
+            pos += 2
+            if pos + pps_len > len(data): break
+            pps_list.append(data[pos:pos+pps_len])
+            pos += pps_len
+
+        # 构建描述信息
+        desc = f"""AVC Configuration Box
+        ----------------------------
+        Version: {config_version}
+        Profile: {profile} ({"Baseline" if profile==66 else "Main" if profile==77 else "High"})
+        Level: {level/10:.1f}
+        SPS: {len(sps_list)}, PPS: {len(pps_list)}"""
+
+        # 添加到树形视图
+        item_id = self.tree.insert(
+            parent_id, "end", 
+            text="avcC Box",
+            values=("avcC", f"{offset}", len(data), desc)
+        )
+        self.box_descriptions[item_id]= desc
+        
+        # 添加SPS/PPS子节点
+        if sps_list:
+            self._add_nalu(item_id, "SPS", sps_list[0], offset+16)
+        if pps_list:
+            self._add_nalu(item_id, "PPS", pps_list[0], offset+16+len(sps_list[0])+2)
+
+    def _add_nalu(self, parent_id, name, nalu_data, offset):
+        """添加NAL单元节点"""
+        item_id = self.tree.insert(
+            parent_id, "end",
+            text=f"{name}",
+            values=(name, f"{offset}", len(nalu_data), 
+                   f"{name} (Type: 0x{nalu_data[0] & 0x1F:02X})")
+        )
+        self.box_hex_data[item_id] = nalu_data.hex(' ')
+    
+    
+    
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
         start_address = f"{offset:d}"
         item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
-        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd']:
+        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
             nested_offset = offset + 8  
             if box_type == 'meta':
                 nested_offset = offset + 12
                 box_data = box_data[4:]
             if box_type == 'stsd':
-                nested_offset = offset + 16
-                print(f"stsd entry count: {struct.unpack('>I', box_data[4:4+4])}\n")
-                box_data = box_data[8:]
+                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
+                return 
+                
             self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
         self.box_descriptions[item_id] = description  
         self.box_hex_data[item_id] = hex_data 
@@ -1203,10 +1387,15 @@ class MP4ParserApp:
             box_size, box_type, box_data, box_header = self.read_box(box_file)
             if not box_size:
                 break
-            description = self.get_box_description( offset, box_size, box_type, box_data)
-            hex_data = self.get_hex_data(box_header+box_data, box_type)
-            self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
-            offset += box_size
+            if box_type == 'hvcC':
+                self.parse_hvcc(box_data, offset, parent_id)
+            elif box_type == 'avcC':
+                self.parse_avcc(box_data, offset, parent_id)
+            else:
+                description = self.get_box_description( offset, box_size, box_type, box_data)
+                hex_data = self.get_hex_data(box_header+box_data, box_type)
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
+                offset += box_size
 #
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
@@ -1233,10 +1422,6 @@ class MP4ParserApp:
         return '\n'.join(lines)
 
 
-
-"""
-main
-"""
        
 app = None
 g_fileName = ""
