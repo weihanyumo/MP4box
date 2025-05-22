@@ -36,13 +36,11 @@ class TRACK:
         chunk_index = 0
         sample_index = 0
 
-        # 解码时间戳 (DTS)
         for sample_count, sample_delta in self.stts:
             for _ in range(sample_count):
                 dts_list.append(dts/self.timescale)
                 dts += sample_delta
 
-        # 显示时间戳 (PTS)
         index=0
         if self.ctts and len(self.ctts) > 0:
             for sample_count, offset in self.ctts:
@@ -54,8 +52,6 @@ class TRACK:
         else:
             pts_list = dts_list[:]
         
-        
-        # 计算 chunk 偏移 
         offsets = []
         chunk_index = 0
         sample_index = 0
@@ -70,7 +66,6 @@ class TRACK:
                     sample_index += 1
                 chunk_index += 1
         self.frame_start_positions = offsets[:]
-        # 汇总结果
         frames = []
         for i in range(len(self.stsz)):
             flag="B-Frame"
@@ -131,14 +126,11 @@ class MP4ParserApp:
 
         self.tree.pack(fill=tk.BOTH, expand=True)
 
-        # 绑定 Treeview 选择事件
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        # 下方两个窗口：左侧 description，右侧 hex_data
         bottom_frame = tk.Frame(self.main_frame)
         bottom_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 左侧：Description 窗口
         desc_frame = tk.Frame(bottom_frame)
         desc_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
 
@@ -158,7 +150,6 @@ class MP4ParserApp:
         self.description_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         desc_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
-        # 右侧：Hex Data 窗口
         hex_frame = tk.Frame(bottom_frame)
         hex_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
 
@@ -168,26 +159,21 @@ class MP4ParserApp:
         hex_text_frame = tk.Frame(hex_frame)
         hex_text_frame.pack(fill=tk.BOTH, expand=True)
 
-        # 滚动条
         hex_scroll_x = tk.Scrollbar(hex_text_frame, orient=tk.HORIZONTAL)
         hex_scroll_y = tk.Scrollbar(hex_text_frame, orient=tk.VERTICAL)
 
-        # 文本框
         self.hex_text = tk.Text(
             hex_text_frame, height=10, wrap="none", font=("Courier", 10),
             yscrollcommand=hex_scroll_y.set, xscrollcommand=hex_scroll_x.set
         )
 
-        # 滚动条绑定
         hex_scroll_x.config(command=self.hex_text.xview)
         hex_scroll_y.config(command=self.hex_text.yview)
 
-        # 网格布局，保证滚动条不会互相挤压
         self.hex_text.grid(row=0, column=0, sticky="nsew")
         hex_scroll_y.grid(row=0, column=1, sticky="ns")
         hex_scroll_x.grid(row=1, column=0, sticky="ew")
 
-        # 配置行列权重，保证可以拉伸
         hex_text_frame.grid_rowconfigure(0, weight=1)
         hex_text_frame.grid_columnconfigure(0, weight=1)
         
@@ -196,27 +182,25 @@ class MP4ParserApp:
     def remove_trees(self):
         print("remove trees")
         self.main_frame.pack_forget()
-        self.root.update_idletasks()  # 强制刷新界面
+        self.root.update_idletasks()
 
         
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
         if selected_item:
-            # 显示描述信息
             description = self.box_descriptions.get(selected_item[0], "No description available")
             if selected_item[0] == self.mdat_item_id:
                 description = self.get_sample_description()
             self.description_text.delete("1.0", tk.END)
             self.description_text.insert(tk.END, description)
 
-            # 显示 Hex 数据
             hex_data = self.box_hex_data.get(selected_item[0], "No hex data available")
             self.hex_text.delete("1.0", tk.END)
             self.hex_text.insert(tk.END, hex_data)
     
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
-            offset = 0  # 追踪当前偏移量
+            offset = 0
             while True:
                 box_size, box_type, box_data, box_header = self.read_box(file)
                 if not box_size:
@@ -327,7 +311,6 @@ class MP4ParserApp:
         compatible_brands = [box_data[i:i+4].decode('utf-8', errors='ignore') for i in range(8, len(box_data), 4)]
         return f"主品牌: {major_brand}, 次版本: {minor_version}, 兼容品牌: {', '.join(compatible_brands)}"
 
-#get box des   
     def get_sample_description(self):
         description = f"track count: {len(self.tracks)}\n"
         print(f"description tracks count:{len(self.tracks)}")
@@ -340,20 +323,6 @@ class MP4ParserApp:
         return description
         
     def get_mvhd_description(self, box_data):
-        """
-        Version	1	版本号 (1)
-        Flags	3	标志位 (通常为 0)
-        Creation Time	8	创建时间 (Unix 时间戳)
-        Modification Time	8	修改时间 (Unix 时间戳)
-        Time Scale	4	时间刻度 (每秒的时间单位数)
-        Duration	8	时长 (以时间刻度为单位的持续时间)
-        Rate	4	播放速率 (通常为 0x00010000 = 1.0)
-        Volume	2	音量 (通常为 0x0100 = 1.0)
-        Reserved	10	保留字段
-        Matrix	36	视频变换矩阵
-        Pre-defined	24	预留字段
-        Next Track ID	4	下一个可用的 track ID
-        """
         offset = 0
         version, flags = struct.unpack(">B3s", box_data[:4])
         description = (f"Version: {version}, Flags: {flags.hex()}\n")
@@ -376,7 +345,6 @@ class MP4ParserApp:
         offset += 4
         description += f"timescale: {self.timescale}\n"
 
-        # Duration (4 bytes or 8 bytes)
         if version == 0:
             duration, = struct.unpack(">I", box_data[offset:offset+4])
             offset += 4
@@ -390,13 +358,6 @@ class MP4ParserApp:
         return description
     
     def get_hdlr_description(self, box_data, box_length):
-        """
-        4   version & flags	版本号（通常为0）及标志位
-        4	pre_defined	保留字段，始终为0
-        4	handler_type	处理程序类型
-        12	reserved	保留字段，全部为0
-        n	name	处理程序名称，以 null 终止的字符串
-        """    
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
@@ -420,17 +381,14 @@ class MP4ParserApp:
         description += (f"Creation Time: {creation_time}\n")
         description += (f"Modification Time: {modification_time}\n")
 
-        # Track ID (4 bytes)
         track_id, = struct.unpack(">I", box_data[offset:offset+4])
         offset += 4
         description += (f"Track ID: {track_id}\n")
         
         self.currentTrak=self.get_or_create_track(track_id)
 
-        # Reserved (4 bytes)
         offset += 4
 
-        # Duration (4 bytes or 8 bytes)
         if version == 0:
             duration, = struct.unpack(">I", box_data[offset:offset+4])
             offset += 4
@@ -439,51 +397,32 @@ class MP4ParserApp:
             offset += 8
         description += (f"Duration: {duration}\n")
 
-        # Layer (2 bytes)
         layer, = struct.unpack(">H", box_data[offset:offset+2])
         offset += 2
         description += (f"Layer: {layer}\n")
 
-        # Alternate Group (2 bytes)
         alternate_group, = struct.unpack(">H", box_data[offset:offset+2])
         offset += 2
         description += (f"Alternate Group: {alternate_group}\n")
 
-        # Volume (2 bytes)
         volume, = struct.unpack(">H", box_data[offset:offset+2])
         offset += 2
         description += (f"Volume: {volume}\n")
 
-        # Reserved (2 bytes)
         offset += 2
 
-        # Matrix (9 x 4 bytes)
         matrix = struct.unpack("<9I", box_data[offset:offset+36])
         offset += 36
         description += (f"Matrix: {matrix}\n") 
-        #why ?
         offset += 8
-        # Width and Height (4 bytes each)
         width, height = struct.unpack(">II", box_data[offset:offset+8])
         offset += 8
-        description += (f"Width: {width/(1<<16) }\n")  # Convert fixed-point 16.16 to float
+        description += (f"Width: {width/(1<<16) }\n")  
         description += (f"Height: {height/(1<<16) }\n")
         
         return description
  
     def get_mdhd_description(self, box_data):
-        
-        """
- 
-        Version	1	版本号（0 或 1）
-        Flags	3	标志位
-        Creation Time	8	创建时间（Unix时间戳）
-        Modification Time	8	修改时间（Unix时间戳）
-        Time Scale	4	时间刻度（表示每秒的单位数）
-        Duration	8	持续时间（以时间刻度单位计）
-        Language	2	语言代码（通常是 ISO-639-2 语言代码）
-        Quality	2	媒体质量（通常为0）
-        """
         offset = 0
         version, flags = struct.unpack(">B3s", box_data[:4])
         offset += 4
@@ -611,7 +550,6 @@ class MP4ParserApp:
         description += f"earliest pts: {earliest_presentation_time}, first offset: {first_offset}\n"
         description += f"refence count: {reference_count}\n"
         segmentPos = boxOffset+boxSize;
-        # 解析 Reference 数据
         for i in range(reference_count):
             reference_type_and_size, subsegment_duration, sap_data = struct.unpack(">I I I", box_data[offset:offset + 12])
             offset += 12
@@ -625,7 +563,6 @@ class MP4ParserApp:
 
             description += f"参考片段 {i+1}: 类型: {'I-Frame' if reference_type == 0 else 'P/B-Frame'}, startPos: {segmentPos}, 大小: {reference_size}, 持续时间: {subsegment_duration}\n"
             segmentPos += reference_size
-            #description += f"  - 从 SAP 开始: {starts_with_SAP}, SAP 类型: {SAP_type}, SAP 时间增量: {SAP_delta_time}\n"
         return description
 
     def get_moof_description(self, box_data):
@@ -642,10 +579,6 @@ class MP4ParserApp:
         return description
     
     def get_iods_description(self, box_data):
-        """
-        4	version & flags	版本号（通常为 0）及标志位
-        n	InitialObjectDescriptor	初始对象描述符
-        """
         version_and_flags = struct.unpack('>I', box_data[:4])[0]
         tag = box_data[4]
         size = box_data[5]
@@ -675,8 +608,6 @@ class MP4ParserApp:
         return description
 
     def get_trun_description(self,startPos,  box_data):
-        #description = "Track Run Box (TRUN)\n"
-
         version_flags, sample_count = struct.unpack(">I I", box_data[:8])
         version = (version_flags >> 24) & 0xFF
         flags = version_flags & 0xFFFFFF
@@ -734,7 +665,6 @@ class MP4ParserApp:
                 sample_info.append(f"time delta: {sample_cto}")
                 
             samplePresentationTime = cumulativeTime + sample_cto - 0
-            #edtsOffset;
             cumulativeTime += sample_duration;
             sample_info.append(f"pts:{samplePresentationTime/self.currentTrak.timescale:.3f}")
 
@@ -806,7 +736,6 @@ class MP4ParserApp:
         flags = version_flags & 0xFFFFFF
         offset += 4
 
-        # Optional fields if flags & 1
         if flags & 1:
             aux_info_type = struct.unpack(">I", box_data[offset:offset+4])[0]
             aux_info_param = struct.unpack(">I", box_data[offset+4:offset+8])[0]
@@ -850,7 +779,6 @@ class MP4ParserApp:
         flags = version_flags & 0xFFFFFF
         offset += 4
 
-        # Optional aux_info_type
         if flags & 1:
             aux_info_type = struct.unpack(">I", box_data[offset:offset+4])[0]
             aux_info_param = struct.unpack(">I", box_data[offset+4:offset+8])[0]
@@ -988,19 +916,14 @@ class MP4ParserApp:
     def get_tenc_descrition(self, box_data):
         if len(box_data) < 24: return
             
-        # 加密参数
         encrypted_flags = box_data[0]
         is_encrypted = (encrypted_flags >> 7) & 0x01
         iv_size = encrypted_flags & 0x0F
-        
-        # 打印警告
         if iv_size not in [0, 8, 16]:
             print(f"⚠️ 异常IV大小: {iv_size} (标准值为0/8/16)")
         
-        # KID解析
         kid = box_data[5:21].hex()
         
-        # 输出结果
         return (f"""
         加密: {'是' if is_encrypted else '否'}
         IV大小: {iv_size} bytes
@@ -1013,17 +936,14 @@ class MP4ParserApp:
             print("not engouh mdcv data")
             return "not data"
     
-        # 解析色度坐标 (u16.16格式)
         def parse_chromaticity(byte_pair):
             value = struct.unpack('>H', byte_pair)[0]
             return round(value / 50000, 3)
         
-        # 解析亮度值 (u16.16格式)
         def parse_luminance(byte_quad):
             value = struct.unpack('>I', byte_quad)[0]
             return round(value / 10000, 4)
         
-        # 提取数据
         r_x = parse_chromaticity(box_data[0:2])
         r_y = parse_chromaticity(box_data[2:4])
         g_x = parse_chromaticity(box_data[4:6])
@@ -1046,11 +966,9 @@ class MP4ParserApp:
         return desc
         
     def parse_hvcc(self, hvcc_data, offset, parent_id):
-        """解析 HEVC 配置 (hvcC) box"""
-        if len(hvcc_data) < 23:  # hvcC 最小长度
+        if len(hvcc_data) < 23:  
             return
 
-        # 解析基础头信息
         config_version = hvcc_data[0]
         profile_space = (hvcc_data[1] >> 6) & 0x03
         tier_flag = (hvcc_data[1] >> 5) & 0x01
@@ -1064,11 +982,8 @@ class MP4ParserApp:
         bit_depth_chroma = (hvcc_data[11] & 0x07) + 8
         avg_frame_rate = struct.unpack('>H', hvcc_data[12:14])[0]
         
-        # 解析 NAL 单元类型
         num_arrays = hvcc_data[22]
         pos = 23
-        
-        # 解析 VPS/SPS/PPS 等参数集
         vps_list, sps_list, pps_list = [], [], []
         for _ in range(num_arrays):
             if pos + 3 > len(hvcc_data):
@@ -1087,15 +1002,14 @@ class MP4ParserApp:
                     break
                     
                 unit_data = hvcc_data[pos:pos+unit_size]
-                if array_type == 0x20:  # VPS
+                if array_type == 0x20:  
                     vps_list.append(unit_data)
-                elif array_type == 0x21:  # SPS
+                elif array_type == 0x21:  
                     sps_list.append(unit_data)
-                elif array_type == 0x22:  # PPS
+                elif array_type == 0x22:  
                     pps_list.append(unit_data)
                 pos += unit_size
-
-        # 构建描述信息
+                
         desc = f"HEVC Configuration Box\n" \
                f"Version: {config_version}\n" \
                f"Profile: space={profile_space} tier={tier_flag} idc={profile_idc}\n" \
@@ -1105,11 +1019,9 @@ class MP4ParserApp:
                f"Bit Depth: Luma={bit_depth_luma}, Chroma={bit_depth_chroma}\n" \
                f"VPS: {len(vps_list)}, SPS: {len(sps_list)}, PPS: {len(pps_list)}"
 
-        # 添加到树形视图
         item_id = self.tree.insert(parent_id, "end", text="hvcC Box", 
                                  values=("hvcC", f"{offset}", len(hvcc_data), desc))
         
-        # 可选：添加参数集详细信息
         if vps_list:
             self._add_parameter_sets(item_id, "VPS", vps_list, offset + pos)
         if sps_list:
@@ -1121,7 +1033,6 @@ class MP4ParserApp:
         self.box_hex_data[item_id] = self.get_hex_data(hvcc_data, "hvcC")
 
     def _add_parameter_sets(self, parent_id, name, param_sets, base_offset):
-        """添加参数集详细信息"""
         for i, data in enumerate(param_sets):
             item_id = self.tree.insert(parent_id, "end", 
                                      text=f"{name} {i+1}",
@@ -1164,31 +1075,27 @@ class MP4ParserApp:
         self.box_hex_data[item_id] = hex_data 
         
     def parse_sample_entry(self, entry_type, entry_data, offset, parent_id):
-        """ 统一处理所有 sample entry 类型"""
         if len(entry_data) < 16:
             return
       
-        # 公共头部 (8字节: size + type, 6字节保留)
         reserved = struct.unpack('>6B', entry_data[8:14])
         data_reference_index = struct.unpack('>H', entry_data[14:16])[0]
         
         base_desc = f"Data Reference Index: {data_reference_index}\nReserved: {reserved}"
         
-        # 根据不同类型调用特定解析方法
-        if entry_type in ['avc1', 'hvc1', 'hev1']:  # 视频
+        if entry_type in ['avc1', 'hvc1', 'hev1']:
             self.parse_video_sample_entry(entry_type, entry_data, offset, parent_id, base_desc)
-        elif entry_type in ['mp4a', 'enca']:  # 音频
+        elif entry_type in ['mp4a', 'enca']:
             self.parse_audio_sample_entry(entry_type, entry_data, offset, parent_id, base_desc)
-        elif entry_type == 'encv':  # 编码视频
+        elif entry_type == 'encv': 
             self.parse_encv_sample_entry(entry_data, offset, parent_id, base_desc)
-        elif entry_type == 'avcC':  # AVC 配置
+        elif entry_type == 'avcC':  
             self.parse_avcc(entry_data, offset, parent_id)
-        elif entry_type == 'hvcC':  # HEVC 配置
+        elif entry_type == 'hvcC': 
             self.parse_hvcc(entry_data, offset, parent_id)
-        elif entry_type == 'esds':  # ES 描述
+        elif entry_type == 'esds':  
             self.parse_esds(entry_data, offset, parent_id)
         else:
-            # 未知类型的默认处理
             desc = f"{base_desc}\nUnknown Sample Entry Type: {entry_type}"
             self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
                                           self.tree.item(parent_id, 'values')[1], 
@@ -1198,13 +1105,11 @@ class MP4ParserApp:
                 self.read_nested_boxes(io.BytesIO(entry_data[16:]), offset + 16, parent_id)
 
     def parse_encv_sample_entry(self, entry_data, offset, parent_id, base_desc):
-        """解析 encv (Encoded Video) sample entry"""
-        if len(entry_data) < 78:  # encv 最小大小
+        if len(entry_data) < 78:  
             return
         print("encv entry\n")
         print(f"box len: {len(entry_data)}")
             
-        # 解析视频信息
         entry_data = entry_data[16:]
         width, height = struct.unpack('>HH', entry_data[16:20])
         print(f"wh:{width} {height}")
@@ -1214,7 +1119,6 @@ class MP4ParserApp:
         #compressor_name = entry_data[29:61].decode('utf-8').strip('\x00')
         depth = entry_data[61]
         #codec_name = entry_data[62:78].decode('utf-8').strip('\x00')
-        # 更新描述
         desc = f"{base_desc}\nEncoded Video Sample Entry\n" \
                f"Width: {width}, Height: {height}\n" \
                f"Resolution: {horizres/0x10000:.2f}x{vertres/0x10000:.2f}\n" \
@@ -1227,8 +1131,6 @@ class MP4ParserApp:
                                       self.tree.item(parent_id, 'values')[2], 
                                       desc))
         
-        
-        # 解析可能的保护方案信息 (sinf box) 或其他子 box
         if len(entry_data) > 70:
             remaining_data = entry_data[70:]
             if len(remaining_data) >= 8 and remaining_data[4:8] == b'sinf':
@@ -1237,18 +1139,14 @@ class MP4ParserApp:
                 self.read_nested_boxes(io.BytesIO(remaining_data), offset + 78, parent_id)
 
     def parse_video_sample_entry(self, entry_type, entry_data, offset, parent_id, base_desc):
-        """解析视频 sample entry"""
         if len(entry_data) < 86:
             return
             
-        # 视频 sample entry 的固定部分 (16字节头部 + 70字节视频信息)
         video_info = struct.unpack('>16H', entry_data[16:48])
         width, height = video_info[0], video_info[1]
         horizres, vertres = struct.unpack('>2I', entry_data[48:56])
         frame_count = entry_data[56]
         depth = entry_data[89]
-        
-        # 更新描述
         desc = f"{base_desc}\nVideo Sample Entry\n" \
                f"Width: {width}, Height: {height}\n" \
                f"Resolution: {horizres/0x10000}x{vertres/0x10000}\n" \
@@ -1260,16 +1158,12 @@ class MP4ParserApp:
                                         self.tree.item(parent_id, 'values')[2], 
                                         desc))
         
-        # 解析可能的 codec 配置 box (avcC, hvcC 等)
         if len(entry_data) > 86:
             self.read_nested_boxes(io.BytesIO(entry_data[86:]), offset + 86, parent_id)
 
     def parse_audio_sample_entry(self, entry_type, entry_data, offset, parent_id, base_desc):
-        """解析音频 sample entry"""
         if len(entry_data) < 28:
             return
-            
-        # 音频 sample entry 的固定部分 (16字节头部 + 12字节音频信息)
         version = struct.unpack('>H', entry_data[16:18])[0]
         revision = struct.unpack('>H', entry_data[18:20])[0]
         vendor = struct.unpack('>I', entry_data[20:24])[0]
@@ -1278,7 +1172,6 @@ class MP4ParserApp:
         packet_size = struct.unpack('>H', entry_data[30:32])[0]
         sample_rate = struct.unpack('>I', entry_data[32:36])[0] >> 16
         
-        # 更新描述
         desc = f"{base_desc}\nAudio Sample Entry\n" \
                f"Version: {version}, Revision: {revision}\n" \
                f"Vendor: {vendor}\n" \
@@ -1292,14 +1185,11 @@ class MP4ParserApp:
                                         self.tree.item(parent_id, 'values')[2], 
                                         desc))
         
-        # 解析可能的 codec 配置 box (esds 等)
         if len(entry_data) > 36:
             self.read_nested_boxes(io.BytesIO(entry_data[36:]), offset + 36, parent_id)
 
     def parse_avcc(self, data, offset, parent_id):
         if len(data) < 10: return
-        
-        # 解析基础头信息
         config_version = data[0]
         profile = data[1]
         compatibility = data[2]
@@ -1307,7 +1197,6 @@ class MP4ParserApp:
         nalu_size = (data[4] & 0x03) + 1
         sps_count = data[5] & 0x1F
 
-        # 解析SPS
         sps_list = []
         pos = 6
         for _ in range(sps_count):
@@ -1318,7 +1207,6 @@ class MP4ParserApp:
             sps_list.append(data[pos:pos+sps_len])
             pos += sps_len
 
-        # 解析PPS
         pps_count = data[pos] if pos < len(data) else 0
         pos += 1
         pps_list = []
@@ -1330,7 +1218,6 @@ class MP4ParserApp:
             pps_list.append(data[pos:pos+pps_len])
             pos += pps_len
 
-        # 构建描述信息
         desc = f"""AVC Configuration Box
         ----------------------------
         Version: {config_version}
@@ -1338,7 +1225,6 @@ class MP4ParserApp:
         Level: {level/10:.1f}
         SPS: {len(sps_list)}, PPS: {len(pps_list)}"""
 
-        # 添加到树形视图
         item_id = self.tree.insert(
             parent_id, "end", 
             text="avcC Box",
@@ -1346,14 +1232,12 @@ class MP4ParserApp:
         )
         self.box_descriptions[item_id]= desc
         
-        # 添加SPS/PPS子节点
         if sps_list:
             self._add_nalu(item_id, "SPS", sps_list[0], offset+16)
         if pps_list:
             self._add_nalu(item_id, "PPS", pps_list[0], offset+16+len(sps_list[0])+2)
 
     def _add_nalu(self, parent_id, name, nalu_data, offset):
-        """添加NAL单元节点"""
         item_id = self.tree.insert(
             parent_id, "end",
             text=f"{name}",
@@ -1396,7 +1280,8 @@ class MP4ParserApp:
                 hex_data = self.get_hex_data(box_header+box_data, box_type)
                 self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
                 offset += box_size
-#
+
+
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
