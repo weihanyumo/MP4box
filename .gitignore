@@ -1,4 +1,6 @@
 *.mp4
 *.mpd
+*.spec
+*.exe
 /build
 \build
