@@ -81,7 +81,7 @@ class TRACK:
             })
 
         return frames
-        
+
 #MP4ParserApp
 class MP4ParserApp:
     def __init__(self, root, file_path):
@@ -178,13 +178,12 @@ class MP4ParserApp:
         hex_text_frame.grid_columnconfigure(0, weight=1)
         
         self.parse_fmp4(file_path)
-             
+
     def remove_trees(self):
         print("remove trees")
         self.main_frame.pack_forget()
         self.root.update_idletasks()
 
-        
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
         if selected_item:
@@ -197,7 +196,7 @@ class MP4ParserApp:
             hex_data = self.box_hex_data.get(selected_item[0], "No hex data available")
             self.hex_text.delete("1.0", tk.END)
             self.hex_text.insert(tk.END, hex_data)
-    
+
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
             offset = 0
@@ -224,10 +223,10 @@ class MP4ParserApp:
         box_data = file.read(box_size - 8) if box_size > 8 else b''
         #print(f"type:{box_type} size: {box_size} data_len: {len(box_data)}")
         return box_size, box_type, box_data, box_header
-        
+
     def read_size(self, file, size):
         return file.read(size)
-        
+
     def get_box_description(self, boxOffset, boxSize, box_type, box_data):
         if box_type == "ftyp":
             return self.get_ftyp_description(box_data)
@@ -327,7 +326,7 @@ class MP4ParserApp:
             for j, frame in enumerate(frames):
                 description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}, flag={frame['flag']}\n"
         return description
-        
+
     def get_mvhd_description(self, box_data):
         offset = 0
         version, flags = struct.unpack(">B3s", box_data[:4])
@@ -362,12 +361,12 @@ class MP4ParserApp:
         description += (f"Duration: {duration}\n")
 
         return description
-    
+
     def get_hdlr_description(self, box_data):
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
-    
+
     def get_tkhd_description(self, box_data):
         offset = 0
         version, flags = struct.unpack(">B3s", box_data[:4])
@@ -454,7 +453,7 @@ class MP4ParserApp:
         description += (f"Duration: {duration}\n")
        
         return description
-       
+
     def get_elst_description(self, box_data):
         version = box_data[0]
         flags = box_data[1:4]
@@ -468,7 +467,7 @@ class MP4ParserApp:
             offset += 12
         
         return f"entry count: {entry_count}, \nchunk: {'\n'.join(map(str, self.currentTrak.elst))}"
-        
+
     def get_stts_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         sample_data = []
@@ -480,7 +479,7 @@ class MP4ParserApp:
             self.currentTrak.stts.append((count, sample_delta ))
             sample_data.append(f"duration: {sample_delta }, count: {count}")
         return f"entry count: {entry_count} \n{'\n'.join(sample_data)}"
-        
+
     def get_ctts_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         sample_data = []
@@ -501,7 +500,7 @@ class MP4ParserApp:
             index += 4
             self.currentTrak.stss.append(sync_sample)
         return f"sync sample count： {entry_count}  \nsync samples: {'\n'.join(map(str, self.currentTrak.stss))}"
-        
+
     def get_stsz_description(self, box_data):
         verflag, sample_size = struct.unpack('>II', box_data[:8])
         sample_count = struct.unpack('>I', box_data[8:12])[0]
@@ -514,7 +513,7 @@ class MP4ParserApp:
         else:
             self.currentTrak.stsz = [sample_size] * sample_count
         return f"sample_size:{sample_size}sample count： {sample_count} \n sizes: {'\n'.join(map(str, self.currentTrak.stsz))}"
-           
+
     def get_stsc_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         offset = 8
@@ -523,7 +522,7 @@ class MP4ParserApp:
             self.currentTrak.stsc.append((first_chunk, samples_per_chunk, sample_desc_idx))
             offset += 12
         return f"entry count: {entry_count}, \nchunks: {'\n'.join(map(str, self.currentTrak.stsc))}"
-        
+
     def get_stco_description(self, box_data):
         entry_count = struct.unpack('>I', box_data[4:8])[0]
         offset = 8
@@ -532,10 +531,10 @@ class MP4ParserApp:
             self.currentTrak.stco.append(chunk_offset)
             offset += 4
         return f"entry count: {entry_count} \nchunk: {'\n'.join(map(str, self.currentTrak.stco))}"
-        
+
     def get_sinf_description(self, box_data):
         return "sinf"
-        
+
     def get_sidx_description(self, boxOffset, boxSize, box_data):
         description = "Segment Index Box (SIDX)\n"
 
@@ -583,7 +582,7 @@ class MP4ParserApp:
                 description += self.get_traf_description(box_data)
             offset += box_size
         return description
-    
+
     def get_iods_description(self, box_data):
         version_and_flags = struct.unpack('>I', box_data[:4])[0]
         tag = box_data[4]
@@ -591,7 +590,7 @@ class MP4ParserApp:
         object_descriptor_id = struct.unpack('>H', box_data[6:8])[0]
         url_flag = box_data[8] & 0x01
         return f"version: {version_and_flags >> 24}, flags: {version_and_flags & 0xFFFFFF}, tag: {tag}, size: {size}, object descriptor ID: {object_descriptor_id}, URL flag: {url_flag}"
-    
+
     def get_mfhd_description(self, box_data):
         sequence_number = struct.unpack('>I', box_data[0:4])[0]
         return f"movie sequence number: {sequence_number}"
@@ -689,7 +688,7 @@ class MP4ParserApp:
         track.trackID=track_id
         self.tracks.append(track)
         return track
-        
+
     def get_trex_description(self,  box_data):
         offset = 0
         version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
@@ -707,7 +706,7 @@ class MP4ParserApp:
         description += f"default_sample_flags: {default_sample_flags}\n"
         
         return description
-        
+
     def get_pssh_description(self, box_data):
         offset = 0
         version = box_data[offset+8]
@@ -732,7 +731,7 @@ class MP4ParserApp:
         description += f"kids: {kids}\n"
         description += f"data: {box_data}\n"
         return description
-    
+
     def get_saiz_description(self, box_data):
         offset = 0
         start = offset
@@ -775,7 +774,7 @@ class MP4ParserApp:
         description += f"parsed_bytes: {offset - start}\n"
         
         return description
-        
+
     def get_saio_descrption(self, box_data):
         offset = 0
         start = offset
@@ -815,7 +814,7 @@ class MP4ParserApp:
         description += f"parsed_bytes: {offset - start}\n"
         
         return description
-        
+
     def get_senc_description(self, box_data):
         offset = 0
         start = offset
@@ -852,7 +851,7 @@ class MP4ParserApp:
                 sample_entry['subsamples'] = subsamples
             samples.append(sample_entry)
         return description
-        
+
     def get_tfhd_description(self, box_data):
         version_and_flags = box_data[:4]
         version = version_and_flags[0]
@@ -906,16 +905,16 @@ class MP4ParserApp:
     def get_vmhd_description(self, box_data):
         version, flags, graphicsmode, red, green, blue = struct.unpack(">B3s2H2H", box_data)
         return f"version: {version}, flags: {flags}, graphics mode: {graphicsmode}, opcolor: ({red}, {green}, {blue})"
-    
+
     def get_smhd_description(self, box_data):
         return "Sound Media Header Box (SMHD)"
-        
+
     def get_dinf_description(self, box_data):
         return "Data Information Box (DINF)"
 
     def get_meta_description(self, box_data):
         return "Meta Box (META)"
-    
+
     def get_ilst_description(self, box_data):
         return "Item List Box (ILST)"
 
@@ -1006,7 +1005,7 @@ class MP4ParserApp:
             description+=f"Channel Configuration: {channel_config}\n"
             
         return description
-            
+
     def get_tenc_descrition(self, box_data):
         if len(box_data) < 24: return
             
@@ -1024,7 +1023,7 @@ class MP4ParserApp:
         KID: {kid}
         附加数据: {box_data[34:].decode('ascii', errors='replace')}
         """)
-    
+
     def get_mdcv_description(self, box_data):
         if len(box_data) < 24:
             print("not engouh mdcv data")
@@ -1058,7 +1057,7 @@ class MP4ParserApp:
         Luminance:     {min_lum:.4f} ~ {max_lum:.4f} nits
         """
         return desc
-            
+
     def get_hvcc_descripition(self, box_data ):
         if len(box_data) < 23:  
             return
@@ -1164,7 +1163,7 @@ class MP4ParserApp:
         if pps_list:
             desc+=f"PPS: {self.to_hex(pps_list[0])}\n"
         return desc
-    
+
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
         start_address = f"{offset:d}"
         item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
@@ -1226,7 +1225,7 @@ class MP4ParserApp:
             
         self.box_descriptions[item_id] = description  
         self.box_hex_data[item_id] = hex_data 
-        
+
     def parse_sample_entry(self, entry_type, entry_data, offset, parent_id):
         if len(entry_data) < 16:
             return
@@ -1337,7 +1336,7 @@ class MP4ParserApp:
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
         print(f"总帧数: {total_frames}")
-      
+
     def get_hex_data(self, box_data, box_type):
         lines = []
         if box_type == "mdat":
@@ -1360,7 +1359,7 @@ class MP4ParserApp:
     def to_hex(self, box_data):
         hex_part = ' '.join(f"{byte:02X}" for byte in box_data)
         return hex_part
-       
+
 app = None
 g_fileName = ""
 
@@ -1382,12 +1381,4 @@ if __name__ == "__main__":
     button.pack(anchor="w", padx=10, pady=10)
 
     root.mainloop()
-    
-    
-    
-    
-    
-    
-    
-    
     
