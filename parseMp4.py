@@ -234,7 +234,7 @@ class MP4ParserApp:
         elif box_type == "mvhd":
             return self.get_mvhd_description(box_data)
         elif box_type == "hdlr":
-            return self.get_hdlr_description(box_data, boxSize)
+            return self.get_hdlr_description(box_data)
         elif box_type == "vmhd":
             return self.get_vmhd_description(box_data)
         elif box_type == "smhd":
@@ -250,7 +250,7 @@ class MP4ParserApp:
         elif box_type == "tfdt":
             return self.get_tfdt_description(box_data)
         elif box_type == "meta":
-            return self.get_meta_description(box_data, boxSize)
+            return self.get_meta_description(box_data)
         elif box_type == "mdat":
             return "mdat"
         elif box_type == "mdhd":
@@ -286,7 +286,7 @@ class MP4ParserApp:
         elif box_type == "trun":
             return self.get_trun_description(boxOffset, box_data)
         elif box_type == "trex":
-            return self.get_trex_description(boxOffset, box_data)
+            return self.get_trex_description(box_data)
         elif box_type == "pssh":
             return self.get_pssh_description(box_data)
         elif box_type=="saio":
@@ -299,6 +299,12 @@ class MP4ParserApp:
             return self.get_tenc_descrition(box_data)
         elif box_type=="mdcv":
             return self.get_mdcv_description(box_data)
+        elif box_type=="esds":
+            return self.get_esds_description(box_data)
+        elif box_type=="hvcC":
+            return self.get_hvcc_descripition(box_data)
+        elif box_type=="avcC":
+            return self.get_avcc_description(box_data)
         elif box_type in ('encv', 'enca'):
             return self.get_encrypted_sample_entry(box_data)
           
@@ -357,7 +363,7 @@ class MP4ParserApp:
 
         return description
     
-    def get_hdlr_description(self, box_data, box_length):
+    def get_hdlr_description(self, box_data):
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
@@ -684,7 +690,7 @@ class MP4ParserApp:
         self.tracks.append(track)
         return track
         
-    def get_trex_description(self,startPos,  box_data):
+    def get_trex_description(self,  box_data):
         offset = 0
         version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
         track_id = struct.unpack(">I", box_data[offset+4:offset+8])[0]
@@ -907,12 +913,100 @@ class MP4ParserApp:
     def get_dinf_description(self, box_data):
         return "Data Information Box (DINF)"
 
-    def get_meta_description(self, box_data, box_length):
+    def get_meta_description(self, box_data):
         return "Meta Box (META)"
     
-    def get_ilst_description(self, box_data, box_length):
+    def get_ilst_description(self, box_data):
         return "Item List Box (ILST)"
+
+    def get_esds_description(self, box_data):
+        pos = 0
+        version = box_data[pos]
+        pos += 1
+        flags = box_data[pos:pos+3]
+        pos += 3
         
+        descriptor_tag = box_data[pos]
+        pos += 1
+    
+        descriptor_length = 0
+        while True:
+            b = box_data[pos]
+            pos += 1
+            descriptor_length = (descriptor_length << 7) | (b & 0x7f)
+            if not (b & 0x80):
+                break
+        description=f"ES_Descriptor Length: {descriptor_length} bytes\n"
+        
+        es_id = struct.unpack(">H", box_data[pos:pos+2])[0]
+        description+=f"ES_ID: {es_id}\n"
+        pos += 2
+        
+        stream_priority = box_data[pos]
+        description+=f"Stream Priority: {stream_priority}\n"
+        pos += 1
+        
+        dec_config_tag = box_data[pos]
+        description+=f"\nDecoderConfigDescriptor Tag: 0x{dec_config_tag:02x}\n"
+        pos += 1
+        
+        dec_config_length = 0
+        while True:
+            b = box_data[pos]
+            pos += 1
+            dec_config_length = (dec_config_length << 7) | (b & 0x7f)
+            if not (b & 0x80):
+                break
+        description+=f"DecoderConfigDescriptor Length: {dec_config_length} bytes\n"
+        
+        object_type = box_data[pos]
+        description+=f"Object Type: 0x{object_type:02x} (AAC LC = 0x40)\n"
+        pos += 1
+        
+        stream_type = box_data[pos]
+        description+=f"Stream Type: 0x{stream_type:02x} (Audio)\n"
+        pos += 1
+        
+        buffer_size = struct.unpack(">I", b'\x00' + box_data[pos:pos+3])[0]
+        description+=f"Buffer Size: {buffer_size} bytes\n"
+        pos += 3
+        
+        max_bitrate = struct.unpack(">I", box_data[pos:pos+4])[0]
+        description+=f"Max Bitrate: {max_bitrate} bps\n"
+        pos += 4
+        
+        avg_bitrate = struct.unpack(">I", box_data[pos:pos+4])[0]
+        description+=f"Avg Bitrate: {avg_bitrate} bps\n"
+        pos += 4
+        
+        dec_specific_tag = box_data[pos]
+        description+=f"\nDecoderSpecificInfo Tag: 0x{dec_specific_tag:02x}\n"
+        pos += 1
+        
+        dec_specific_length = 0
+        while True:
+            b = box_data[pos]
+            pos += 1
+            dec_specific_length = (dec_specific_length << 7) | (b & 0x7f)
+            if not (b & 0x80):
+                break
+        description+=f"DecoderSpecificInfo Length: {dec_specific_length} bytes\n"
+        
+        if dec_specific_length >= 2:
+            audio_config = box_data[pos:pos+2]
+            pos += 2
+            
+            audio_object_type = (audio_config[0] >> 3) & 0x1f
+            sampling_freq_index = ((audio_config[0] & 0x07) << 1) | ((audio_config[1] >> 7) & 0x01)
+            channel_config = (audio_config[1] >> 3) & 0x0f
+            
+            description+=f"\nAAC Audio Specific Config:\n"
+            description += f"Audio Object Type: {audio_object_type} (AAC LC = 2)\n"
+            description+= f"Sampling Frequency Index: {sampling_freq_index}\n"
+            description+=f"Channel Configuration: {channel_config}\n"
+            
+        return description
+            
     def get_tenc_descrition(self, box_data):
         if len(box_data) < 24: return
             
@@ -964,11 +1058,11 @@ class MP4ParserApp:
         Luminance:     {min_lum:.4f} ~ {max_lum:.4f} nits
         """
         return desc
-        
-    def parse_hvcc(self, hvcc_data, offset, parent_id):
-        if len(hvcc_data) < 23:  
+            
+    def get_hvcc_descripition(self, box_data ):
+        if len(box_data) < 23:  
             return
-
+        hvcc_data = box_data[0:]
         config_version = hvcc_data[0]
         profile_space = (hvcc_data[1] >> 6) & 0x03
         tier_flag = (hvcc_data[1] >> 5) & 0x01
@@ -1017,30 +1111,89 @@ class MP4ParserApp:
                f"Level: {level_idc}\n" \
                f"Chroma: {chroma_format} ({['mono','4:2:0','4:2:2','4:4:4'][chroma_format]})\n" \
                f"Bit Depth: Luma={bit_depth_luma}, Chroma={bit_depth_chroma}\n" \
-               f"VPS: {len(vps_list)}, SPS: {len(sps_list)}, PPS: {len(pps_list)}"
-
-        item_id = self.tree.insert(parent_id, "end", text="hvcC Box", 
-                                 values=("hvcC", f"{offset}", len(hvcc_data), desc))
+               f"VPS: {len(vps_list)}, SPS: {len(sps_list)}, PPS: {len(pps_list)}\n"
         
         if vps_list:
-            self._add_parameter_sets(item_id, "VPS", vps_list, offset + pos)
+            desc += f"VPS {self.to_hex(vps_list[0])}\n"
         if sps_list:
-            self._add_parameter_sets(item_id, "SPS", sps_list, offset + pos)
+            desc += f"SPS {self.to_hex(sps_list[0])}\n"
         if pps_list:
-            self._add_parameter_sets(item_id, "PPS", pps_list, offset + pos)
-        
-        self.box_descriptions[item_id] = desc
-        self.box_hex_data[item_id] = self.get_hex_data(hvcc_data, "hvcC")
+            desc += f"PPS {self.to_hex(pps_list[0])}\n"
+            
+        return desc
 
-    def _add_parameter_sets(self, parent_id, name, param_sets, base_offset):
-        for i, data in enumerate(param_sets):
-            item_id = self.tree.insert(parent_id, "end", 
-                                     text=f"{name} {i+1}",
-                                     values=(f"{name}", f"{base_offset}", len(data), 
-                                            f"{name} {i+1} (Size: {len(data)})"))
-            self.box_hex_data[item_id] = self.get_hex_data(data, name)
-            base_offset += len(data)
-      
+    def get_avcc_description(self, box_data):  
+        data = box_data[0:]
+        if len(data) < 10: return
+        config_version = data[0]
+        profile = data[1]
+        compatibility = data[2]
+        level = data[3]
+        nalu_size = (data[4] & 0x03) + 1
+        sps_count = data[5] & 0x1F
+
+        sps_list = []
+        pos = 6
+        for _ in range(sps_count):
+            if pos + 2 > len(data): break
+            sps_len = struct.unpack('>H', data[pos:pos+2])[0]
+            pos += 2
+            if pos + sps_len > len(data): break
+            sps_list.append(data[pos:pos+sps_len])
+            pos += sps_len
+
+        pps_count = data[pos] if pos < len(data) else 0
+        pos += 1
+        pps_list = []
+        for _ in range(pps_count):
+            if pos + 2 > len(data): break
+            pps_len = struct.unpack('>H', data[pos:pos+2])[0]
+            pos += 2
+            if pos + pps_len > len(data): break
+            pps_list.append(data[pos:pos+pps_len])
+            pos += pps_len
+
+        desc = f"""AVC Configuration Box
+        Version: {config_version}
+        Profile: {profile} ({"Baseline" if profile==66 else "Main" if profile==77 else "High"})
+        Level: {level/10:.1f}
+        SPS: {len(sps_list)}, PPS: {len(pps_list)}\n"""
+        
+        if sps_list:
+            desc +=f"SPS: {self.to_hex(sps_list[0])}\n"
+        if pps_list:
+            desc+=f"PPS: {self.to_hex(pps_list[0])}\n"
+        return desc
+    
+    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
+        start_address = f"{offset:d}"
+        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
+        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
+            nested_offset = offset + 8  
+            if box_type == 'meta':
+                nested_offset = offset + 12
+                box_data = box_data[4:]
+            if box_type == 'stsd':
+                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
+                return 
+                
+            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
+        self.box_descriptions[item_id] = description  
+        self.box_hex_data[item_id] = hex_data 
+        if box_type == 'mdat':
+            self.mdat_item_id = item_id;
+
+    def read_nested_boxes(self, box_file, offset, parent_id):
+        while True:
+            box_size, box_type, box_data, box_header = self.read_box(box_file)
+            if not box_size:
+                break
+            else:
+                description = self.get_box_description( offset, box_size, box_type, box_data)
+                hex_data = self.get_hex_data(box_header+box_data, box_type)
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
+                offset += box_size
+ 
     def parse_stsd_box(self, box_type, box_size, box_data, offset, description, hex_data, item_id):
         start_address = f"{offset:d}"
         version_and_flags = struct.unpack('>I', box_data[:4])[0]
@@ -1089,12 +1242,6 @@ class MP4ParserApp:
             self.parse_audio_sample_entry(entry_type, entry_data, offset, parent_id, base_desc)
         elif entry_type == 'encv': 
             self.parse_encv_sample_entry(entry_data, offset, parent_id, base_desc)
-        elif entry_type == 'avcC':  
-            self.parse_avcc(entry_data, offset, parent_id)
-        elif entry_type == 'hvcC': 
-            self.parse_hvcc(entry_data, offset, parent_id)
-        elif entry_type == 'esds':  
-            self.parse_esds(entry_data, offset, parent_id)
         else:
             desc = f"{base_desc}\nUnknown Sample Entry Type: {entry_type}"
             self.tree.item(parent_id, values=(self.tree.item(parent_id, 'values')[0], 
@@ -1116,9 +1263,7 @@ class MP4ParserApp:
         horizres, vertres = struct.unpack('>II', entry_data[20:28])
         print(f"hv:{horizres} {vertres}")
         frame_count = entry_data[28]
-        #compressor_name = entry_data[29:61].decode('utf-8').strip('\x00')
         depth = entry_data[61]
-        #codec_name = entry_data[62:78].decode('utf-8').strip('\x00')
         desc = f"{base_desc}\nEncoded Video Sample Entry\n" \
                f"Width: {width}, Height: {height}\n" \
                f"Resolution: {horizres/0x10000:.2f}x{vertres/0x10000:.2f}\n" \
@@ -1188,100 +1333,6 @@ class MP4ParserApp:
         if len(entry_data) > 36:
             self.read_nested_boxes(io.BytesIO(entry_data[36:]), offset + 36, parent_id)
 
-    def parse_avcc(self, data, offset, parent_id):
-        if len(data) < 10: return
-        config_version = data[0]
-        profile = data[1]
-        compatibility = data[2]
-        level = data[3]
-        nalu_size = (data[4] & 0x03) + 1
-        sps_count = data[5] & 0x1F
-
-        sps_list = []
-        pos = 6
-        for _ in range(sps_count):
-            if pos + 2 > len(data): break
-            sps_len = struct.unpack('>H', data[pos:pos+2])[0]
-            pos += 2
-            if pos + sps_len > len(data): break
-            sps_list.append(data[pos:pos+sps_len])
-            pos += sps_len
-
-        pps_count = data[pos] if pos < len(data) else 0
-        pos += 1
-        pps_list = []
-        for _ in range(pps_count):
-            if pos + 2 > len(data): break
-            pps_len = struct.unpack('>H', data[pos:pos+2])[0]
-            pos += 2
-            if pos + pps_len > len(data): break
-            pps_list.append(data[pos:pos+pps_len])
-            pos += pps_len
-
-        desc = f"""AVC Configuration Box
-        ----------------------------
-        Version: {config_version}
-        Profile: {profile} ({"Baseline" if profile==66 else "Main" if profile==77 else "High"})
-        Level: {level/10:.1f}
-        SPS: {len(sps_list)}, PPS: {len(pps_list)}"""
-
-        item_id = self.tree.insert(
-            parent_id, "end", 
-            text="avcC Box",
-            values=("avcC", f"{offset}", len(data), desc)
-        )
-        self.box_descriptions[item_id]= desc
-        
-        if sps_list:
-            self._add_nalu(item_id, "SPS", sps_list[0], offset+16)
-        if pps_list:
-            self._add_nalu(item_id, "PPS", pps_list[0], offset+16+len(sps_list[0])+2)
-
-    def _add_nalu(self, parent_id, name, nalu_data, offset):
-        item_id = self.tree.insert(
-            parent_id, "end",
-            text=f"{name}",
-            values=(name, f"{offset}", len(nalu_data), 
-                   f"{name} (Type: 0x{nalu_data[0] & 0x1F:02X})")
-        )
-        self.box_hex_data[item_id] = nalu_data.hex(' ')
-    
-    
-    
-    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
-        start_address = f"{offset:d}"
-        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
-        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
-            nested_offset = offset + 8  
-            if box_type == 'meta':
-                nested_offset = offset + 12
-                box_data = box_data[4:]
-            if box_type == 'stsd':
-                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
-                return 
-                
-            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
-        self.box_descriptions[item_id] = description  
-        self.box_hex_data[item_id] = hex_data 
-        if box_type == 'mdat':
-            self.mdat_item_id = item_id;
-
-    def read_nested_boxes(self, box_file, offset, parent_id):
-        while True:
-            box_size, box_type, box_data, box_header = self.read_box(box_file)
-            if not box_size:
-                break
-            if box_type == 'hvcC':
-                self.parse_hvcc(box_data, offset, parent_id)
-            elif box_type == 'avcC':
-                self.parse_avcc(box_data, offset, parent_id)
-            else:
-                description = self.get_box_description( offset, box_size, box_type, box_data)
-                hex_data = self.get_hex_data(box_header+box_data, box_type)
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
-                offset += box_size
-
-
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
@@ -1306,7 +1357,9 @@ class MP4ParserApp:
             lines.append(f"{hex_part:<48}  {ascii_part}")
         return '\n'.join(lines)
 
-
+    def to_hex(self, box_data):
+        hex_part = ' '.join(f"{byte:02X}" for byte in box_data)
+        return hex_part
        
 app = None
 g_fileName = ""
