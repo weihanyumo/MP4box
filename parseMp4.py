@@ -79,8 +79,8 @@ class TRACK:
                 'offset': offsets[i],
                 'flag':flag
             })
-
-        return frames
+        frames_sorted = sorted(frames, key=lambda x: x['PTS'])
+        return frames_sorted
 
 #MP4ParserApp
 class MP4ParserApp:
