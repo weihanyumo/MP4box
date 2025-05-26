@@ -319,9 +319,9 @@ class MP4ParserApp:
         elif box_type == "mfhd":
             return self.get_mfhd_description(box_data)
         elif box_type == "traf":
-            return self.get_traf_description(boxOffset, box_data)
+            return self.get_traf_description(box_data)
         elif box_type == "trun":
-            return self.get_trun_description(boxOffset, box_data)
+            return self.get_trun_description( box_data)
         elif box_type == "trex":
             return self.get_trex_description(box_data)
         elif box_type == "pssh":
@@ -611,13 +611,14 @@ class MP4ParserApp:
     def get_moof_description(self, box_data):
         description = "Movie Fragment Box\n"
         offset = 0 
+        file = io.BytesIO(box_data)
         while offset < len(box_data):
-            box_size, box_type, box_data, box_header = self.read_box(io.BytesIO(box_data))
+            box_size, box_type, box, box_header = self.read_box(file)
             description += f"子 Box 类型: {box_type}, 大小: {box_size}\n"
             if box_type == "mfhd":
-                description += self.get_mfhd_description(box_data)
+                description += self.get_mfhd_description(box)
             elif box_type == "traf":
-                description += self.get_traf_description(box_data)
+                description += self.get_traf_description( box)
             offset += box_size
         return description
 
@@ -633,7 +634,7 @@ class MP4ParserApp:
         sequence_number = struct.unpack('>I', box_data[0:4])[0]
         return f"movie sequence number: {sequence_number}"
 
-    def get_traf_description(self,startPos, box_data):
+    def get_traf_description(self, box_data):
         description = "Track Fragment Box\n"
         offset = 0
         
@@ -643,20 +644,18 @@ class MP4ParserApp:
             if box_type == "tfhd":
                 description += self.get_tfhd_description(box_data)
             elif box_type == "trun":
-                description += self.get_trun_description(startPos, box_data)
+                description += self.get_trun_description( box_data)
             elif box_type == "tfdt":
                 description += self.get_tfdt_description(box_data)
             offset += box_size
-            startPos += box_size
         return description
 
-    def get_trun_description(self,startPos,  box_data):
+    def get_trun_description(self,  box_data):
         version_flags, sample_count = struct.unpack(">I I", box_data[:8])
         version = (version_flags >> 24) & 0xFF
         flags = version_flags & 0xFFFFFF
 
         offset = 8
-        startPos += 8
         allbufferSize = 0;
 
         description = f"Version: {version}, sample count: {sample_count}, Flags: 0x{flags:06X}\n"
@@ -692,9 +691,8 @@ class MP4ParserApp:
             if flags & 0x000200:
                 sample_size = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
-                sample_info.append(f"size: {sample_size} 字节")
-                self.frame_start_positions.append(startPos)
-                startPos += sample_size
+                sample_info.append(f"offset: {data_offset} size: {sample_size} 字节")
+                data_offset += sample_size
                 allbufferSize+=sample_size
 
             if flags & 0x000400:
