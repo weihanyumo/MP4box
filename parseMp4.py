@@ -135,7 +135,7 @@ class MP4ParserApp:
         self.duration = 0
         self.tracks = []
         self.currentTrak = {}
-
+        self.moof_startPos =0
         self.stss = []
         self.mdat_item_id = 0
         self.totlalFrameCount = 0;
@@ -664,7 +664,8 @@ class MP4ParserApp:
         if flags & 0x000001:
             data_offset = struct.unpack(">I", box_data[offset:offset+4])[0]
             offset += 4
-            description += f"数据偏移: {data_offset}\n"
+            description += f"moof startPos: {self.moof_startPos} 数据偏移: {data_offset} \n"
+            data_offset += self.moof_startPos
 
         if flags & 0x000004:
             first_sample_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
@@ -725,7 +726,7 @@ class MP4ParserApp:
         self.tracks.append(track)
         return track
 
-    def get_trex_description(self,  box_data):
+    def get_trex_description(self, box_data):
         offset = 0
         version_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
         track_id = struct.unpack(">I", box_data[offset+4:offset+8])[0]
@@ -1205,35 +1206,6 @@ class MP4ParserApp:
             desc+=f"pps_info:\n{pps_info}\n"
         return desc
 
-    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
-        start_address = f"{offset:d}"
-        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
-        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
-            nested_offset = offset + 8  
-            if box_type == 'meta':
-                nested_offset = offset + 12
-                box_data = box_data[4:]
-            if box_type == 'stsd':
-                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
-                return 
-                
-            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
-        self.box_descriptions[item_id] = description  
-        self.box_hex_data[item_id] = hex_data 
-        if box_type == 'mdat':
-            self.mdat_item_id = item_id;
-
-    def read_nested_boxes(self, box_file, offset, parent_id):
-        while True:
-            box_size, box_type, box_data, box_header = self.read_box(box_file)
-            if not box_size:
-                break
-            else:
-                description = self.get_box_description( offset, box_size, box_type, box_data)
-                hex_data = self.get_hex_data(box_header+box_data, box_type)
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
-                offset += box_size
- 
     def parse_stsd_box(self, box_type, box_size, box_data, offset, description, hex_data, item_id):
         start_address = f"{offset:d}"
         version_and_flags = struct.unpack('>I', box_data[:4])[0]
@@ -1534,6 +1506,37 @@ class MP4ParserApp:
 
         return pps
 
+    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
+        start_address = f"{offset:d}"
+        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
+        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
+            nested_offset = offset + 8  
+            if box_type == 'moof':
+                self.moof_startPos = offset
+            if box_type == 'meta':
+                nested_offset = offset + 12
+                box_data = box_data[4:]
+            if box_type == 'stsd':
+                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
+                return 
+                
+            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
+        self.box_descriptions[item_id] = description  
+        self.box_hex_data[item_id] = hex_data 
+        if box_type == 'mdat':
+            self.mdat_item_id = item_id;
+
+    def read_nested_boxes(self, box_file, offset, parent_id):
+        while True:
+            box_size, box_type, box_data, box_header = self.read_box(box_file)
+            if not box_size:
+                break
+            else:
+                description = self.get_box_description( offset, box_size, box_type, box_data)
+                hex_data = self.get_hex_data(box_header+box_data, box_type)
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
+                offset += box_size
+ 
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
