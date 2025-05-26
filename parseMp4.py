@@ -9,7 +9,45 @@ import time
 from tkinter import simpledialog
 import uuid
 import time
+import math
 
+
+import math
+
+class BitReader:
+    def __init__(self, data):
+        self.data = data
+        self.ptr = 0
+        self.bit_pos = 0
+    
+    def read_bit(self):
+        if self.ptr >= len(self.data):
+            return 0
+        bit = (self.data[self.ptr] >> (7 - self.bit_pos)) & 1
+        self.bit_pos += 1
+        if self.bit_pos >= 8:
+            self.bit_pos = 0
+            self.ptr += 1
+        return bit
+    
+    def read_bits(self, n):
+        val = 0
+        for _ in range(n):
+            val = (val << 1) | self.read_bit()
+        return val
+    
+    def read_ue(self):
+        leading_zeros = 0
+        while self.read_bit() == 0:
+            leading_zeros += 1
+        if leading_zeros == 0:
+            return 0
+        return (1 << leading_zeros) - 1 + self.read_bits(leading_zeros)
+    
+    def read_se(self):
+        ue = self.read_ue()
+        return (ue + 1) // 2 if (ue % 2) else -(ue // 2)
+    
 class TRACK:
     def __init__(self):
         self.timescale = 0
@@ -1113,9 +1151,10 @@ class MP4ParserApp:
                f"VPS: {len(vps_list)}, SPS: {len(sps_list)}, PPS: {len(pps_list)}\n"
         
         if vps_list:
-            desc += f"VPS {self.to_hex(vps_list[0])}\n"
+            desc += f"VPS: {self.to_hex(vps_list[0])}\n"
         if sps_list:
-            desc += f"SPS {self.to_hex(sps_list[0])}\n"
+            desc += f"SPS: {self.to_hex(sps_list[0])}\n"
+            desc += f"{self.parse_hevc_sps(sps_list[0])}\n"
         if pps_list:
             desc += f"PPS {self.to_hex(pps_list[0])}\n"
             
@@ -1160,8 +1199,12 @@ class MP4ParserApp:
         
         if sps_list:
             desc +=f"SPS: {self.to_hex(sps_list[0])}\n"
+            sps_info = self.parse_sps(sps_list[0])
+            desc += f"sps_info:\n{sps_info}\n"
         if pps_list:
             desc+=f"PPS: {self.to_hex(pps_list[0])}\n"
+            pps_info = self.parse_pps(pps_list[0])
+            desc+=f"pps_info:\n{pps_info}\n"
         return desc
 
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
@@ -1332,10 +1375,197 @@ class MP4ParserApp:
         if len(entry_data) > 36:
             self.read_nested_boxes(io.BytesIO(entry_data[36:]), offset + 36, parent_id)
 
+    def parse_sps(self, sps_data):
+        if len(sps_data) < 4 or sps_data[0] != 0x67:
+            return {'error':'no data'}
+
+        reader = BitReader(sps_data)
+
+        forbidden_zero = reader.read_bit()
+        nal_ref_idc = reader.read_bits(2)
+        nal_unit_type = reader.read_bits(5)
+
+        sps = {
+            'profile_idc': reader.read_bits(8),
+            'constraint_flags': reader.read_bits(8),
+            'level_idc': reader.read_bits(8),
+            'seq_parameter_set_id': reader.read_ue(),
+        }
+
+        if sps['profile_idc'] in [100, 110, 122, 244, 44, 83, 86, 118, 128]:
+            sps['chroma_format_idc'] = reader.read_ue()
+            if sps['chroma_format_idc'] == 3:
+                sps['separate_colour_plane_flag'] = reader.read_bit()
+            sps['bit_depth_luma'] = reader.read_ue() + 8
+            sps['bit_depth_chroma'] = reader.read_ue() + 8
+            sps['qpprime_y_zero_transform_bypass_flag'] = reader.read_bit()
+            sps['seq_scaling_matrix_present_flag'] = reader.read_bit()
+            if sps['seq_scaling_matrix_present_flag']:
+                raise NotImplementedError("Scaling matrix not implemented")
+        
+        sps['log2_max_frame_num'] = reader.read_ue() + 4
+        sps['pic_order_cnt_type'] = reader.read_ue()
+
+        if sps['pic_order_cnt_type'] == 0:
+            sps['log2_max_pic_order_cnt_lsb'] = reader.read_ue() + 4
+        elif sps['pic_order_cnt_type'] == 1:
+            sps['delta_pic_order_always_zero_flag'] = reader.read_bit()
+            sps['offset_for_non_ref_pic'] = reader.read_se()
+            sps['offset_for_top_to_bottom_field'] = reader.read_se()
+            sps['num_ref_frames_in_pic_order_cnt_cycle'] = reader.read_ue()
+            sps['offset_for_ref_frame'] = [
+                reader.read_se() for _ in range(sps['num_ref_frames_in_pic_order_cnt_cycle'])
+            ]
+
+        sps['max_num_ref_frames'] = reader.read_ue()
+        sps['gaps_in_frame_num_value_allowed_flag'] = reader.read_bit()
+
+        sps['pic_width_in_mbs'] = reader.read_ue() + 1
+        sps['pic_height_in_map_units'] = reader.read_ue() + 1
+        sps['frame_mbs_only_flag'] = reader.read_bit()
+
+        if not sps['frame_mbs_only_flag']:
+            sps['mb_adaptive_frame_field_flag'] = reader.read_bit()
+
+        sps['direct_8x8_inference_flag'] = reader.read_bit()
+
+        sps['width'] = sps['pic_width_in_mbs'] * 16
+        sps['height'] = sps['pic_height_in_map_units'] * 16 * (2 - sps['frame_mbs_only_flag'])
+
+        sps['vui_parameters_present_flag'] = reader.read_bit()
+        if sps['vui_parameters_present_flag']:
+            sps.update(self.parse_vui_parameters(reader))
+        return sps
+    
+    def parse_hevc_sps(self,sps_data):
+        reader = BitReader(sps_data)
+
+        nalu_header = reader.read_bits(16)
+
+        sps = {
+            'video_parameter_set_id': reader.read_bits(4),
+            'max_sub_layers': reader.read_bits(3),
+            'temporal_id_nesting_flag': reader.read_bit()
+        }
+        sps.update(self.parse_hevc_profile_tier_level(reader, sps['max_sub_layers']))
+
+        sps['seq_parameter_set_id'] = reader.read_ue()
+        sps['chroma_format_idc'] = reader.read_ue()
+
+        if sps['chroma_format_idc'] == 3:
+            sps['separate_colour_plane_flag'] = reader.read_bit()
+
+        sps['pic_width_in_luma_samples'] = reader.read_ue()
+        sps['pic_height_in_luma_samples'] = reader.read_ue()
+
+        sps['width'] = sps['pic_width_in_luma_samples']
+        sps['height'] = sps['pic_height_in_luma_samples']
+
+        return sps
+
+    def parse_vui_parameters(sefl, reader):
+        vui = {}
+        vui['aspect_ratio_info_present_flag'] = reader.read_bit()
+        if vui['aspect_ratio_info_present_flag']:
+            vui['aspect_ratio_idc'] = reader.read_bits(8)
+            if vui['aspect_ratio_idc'] == 255:  # Extended_SAR
+                vui['sar_width'] = reader.read_bits(16)
+                vui['sar_height'] = reader.read_bits(16)
+
+        vui['overscan_info_present_flag'] = reader.read_bit()
+        if vui['overscan_info_present_flag']:
+            vui['overscan_appropriate_flag'] = reader.read_bit()
+
+        vui['video_signal_type_present_flag'] = reader.read_bit()
+        if vui['video_signal_type_present_flag']:
+            vui['video_format'] = reader.read_bits(3)
+            vui['video_full_range_flag'] = reader.read_bit()
+            vui['colour_description_present_flag'] = reader.read_bit()
+            if vui['colour_description_present_flag']:
+                vui['colour_primaries'] = reader.read_bits(8)
+                vui['transfer_characteristics'] = reader.read_bits(8)
+                vui['matrix_coefficients'] = reader.read_bits(8)
+
+        vui['chroma_loc_info_present_flag'] = reader.read_bit()
+        if vui['chroma_loc_info_present_flag']:
+            vui['chroma_sample_loc_type_top_field'] = reader.read_ue()
+            vui['chroma_sample_loc_type_bottom_field'] = reader.read_ue()
+
+        vui['timing_info_present_flag'] = reader.read_bit()
+        if vui['timing_info_present_flag']:
+            vui['num_units_in_tick'] = reader.read_bits(32)
+            vui['time_scale'] = reader.read_bits(32)
+            vui['fixed_frame_rate_flag'] = reader.read_bit()
+            if vui['num_units_in_tick'] > 0 and vui['time_scale'] > 0:
+                vui['frame_rate'] = vui['time_scale'] / (2 * vui['num_units_in_tick'])
+
+        return vui
+    
+    def parse_pps(self, pps_data):
+        if len(pps_data) < 2 or pps_data[0] != 0x68:
+            return {'error': 'no data'}
+
+        reader = BitReader(pps_data)
+
+        forbidden_zero = reader.read_bit()
+        nal_ref_idc = reader.read_bits(2)
+        nal_unit_type = reader.read_bits(5)
+
+        pps = {
+            'pic_parameter_set_id': reader.read_ue(),
+            'seq_parameter_set_id': reader.read_ue(),
+            'entropy_coding_mode_flag': reader.read_bit(),
+            'bottom_field_pic_order_in_frame_present_flag': reader.read_bit(),
+            'num_slice_groups': reader.read_ue(),
+        }
+
+        if pps['num_slice_groups'] > 1:
+            pps['slice_group_map_type'] = reader.read_ue()
+            # 更详细的slice group映射解析省略...
+
+        pps['num_ref_idx_l0_active'] = reader.read_ue() + 1
+        pps['num_ref_idx_l1_active'] = reader.read_ue() + 1
+        pps['weighted_pred_flag'] = reader.read_bit()
+        pps['weighted_bipred_idc'] = reader.read_bits(2)
+        pps['pic_init_qp'] = reader.read_se() + 26
+        pps['pic_init_qs'] = reader.read_se() + 26
+        pps['chroma_qp_index_offset'] = reader.read_se()
+        pps['deblocking_filter_control_present_flag'] = reader.read_bit()
+        pps['constrained_intra_pred_flag'] = reader.read_bit()
+        pps['redundant_pic_cnt_present_flag'] = reader.read_bit()
+
+        return pps
+
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
         print(f"总帧数: {total_frames}")
+    
+    def parse_hevc_profile_tier_level(self, reader, max_sub_layers):
+        ptl = {
+            'general_profile_space': reader.read_bits(2),
+            'general_tier_flag': reader.read_bit(),
+            'general_profile_idc': reader.read_bits(5),
+            'general_profile_compatibility_flags': reader.read_bits(32),
+            'general_constraint_indicator_flags': reader.read_bits(48),
+            'general_level_idc': reader.read_bits(8)
+        }
+        
+        ptl['sub_layer_profile_present_flag'] = [reader.read_bit() for _ in range(max_sub_layers)]
+        ptl['sub_layer_level_present_flag'] = [reader.read_bit() for _ in range(max_sub_layers)]
+        
+        for i in range(max_sub_layers):
+            if ptl['sub_layer_profile_present_flag'][i]:
+                ptl[f'sub_layer_{i}_profile_space'] = reader.read_bits(2)
+                ptl[f'sub_layer_{i}_tier_flag'] = reader.read_bit()
+                ptl[f'sub_layer_{i}_profile_idc'] = reader.read_bits(5)
+                ptl[f'sub_layer_{i}_profile_compatibility_flags'] = reader.read_bits(32)
+                ptl[f'sub_layer_{i}_constraint_indicator_flags'] = reader.read_bits(48)
+            
+            if ptl['sub_layer_level_present_flag'][i]:
+                ptl[f'sub_layer_{i}_level_idc'] = reader.read_bits(8)
+        
+        return ptl
 
     def get_hex_data(self, box_data, box_type):
         lines = []
