@@ -111,7 +111,6 @@ class TRACK:
                 chunk_index += 1
         self.frame_start_positions = offsets[:]
         frames = []
-        print(f" handler_type: {self.handler_type}")
         with open(file_path, 'rb') as file:
             for i in range(len(self.stsz)):
                 flag = 'audio'
@@ -130,7 +129,6 @@ class TRACK:
                     'offset': offsets[i],
                     'flag':flag
                 })
-            print(f"sort by pts\n")
             frames_sorted = sorted(frames, key=lambda x: x['PTS'])
             return frames_sorted
 
@@ -398,9 +396,7 @@ class MP4ParserApp:
 
     def get_sample_description(self):
         description = f"track count: {len(self.tracks)}\n"
-        print(f"description tracks count:{len(self.tracks)}")
         for i, track in enumerate(self.tracks):
-            print(f"calculate track:{track.trackID}")
             frames = track.calculate_frame_info(self._file_path)
             description += f"track {i+1} frame count: {len(frames)}\n"
             for j, frame in enumerate(frames):
@@ -446,7 +442,6 @@ class MP4ParserApp:
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
         if self.currentTrak.handler_type == 'unkown':
              self.currentTrak.handler_type= handler_type.decode('utf-8', errors='ignore')
-        print(f"current track hdlr type: {handler_type}\n")
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
 
@@ -1588,7 +1583,6 @@ class MP4ParserApp:
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
-        print(f"总帧数: {total_frames}")
     
     def parse_hevc_profile_tier_level(self, reader, max_sub_layers):
         ptl = {
