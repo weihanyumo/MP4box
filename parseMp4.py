@@ -10,10 +10,15 @@ from tkinter import simpledialog
 import uuid
 import time
 import math
+from enum import Enum, auto, unique
 
 
-import math
-
+class TrackType(Enum):
+    Unkonw = 0
+    Video = 1
+    Audio = 2
+    Other = 3
+    
 class BitReader:
     def __init__(self, data):
         self.data = data
@@ -23,6 +28,7 @@ class BitReader:
     def read_bit(self):
         if self.ptr >= len(self.data):
             return 0
+
         bit = (self.data[self.ptr] >> (7 - self.bit_pos)) & 1
         self.bit_pos += 1
         if self.bit_pos >= 8:
@@ -51,7 +57,7 @@ class BitReader:
 class TRACK:
     def __init__(self):
         self.timescale = 0
-        self.trackType = 0
+        self.handler_type = 'unkown'
         
         self.elst = []
         self.stts = []
@@ -65,7 +71,7 @@ class TRACK:
         self.duration = 0
         self.trackID = 0
         
-    def calculate_frame_info(self):
+    def calculate_frame_info(self, file_path):
         dts = 0
         dts_list = []
         pts_list = []
@@ -89,7 +95,7 @@ class TRACK:
                     count+=1
         else:
             pts_list = dts_list[:]
-        
+
         offsets = []
         chunk_index = 0
         sample_index = 0
@@ -105,20 +111,53 @@ class TRACK:
                 chunk_index += 1
         self.frame_start_positions = offsets[:]
         frames = []
-        for i in range(len(self.stsz)):
-            flag="B-Frame"
-            if i+1 in self.stss:
-                flag="I-Frame"
-                
-            frames.append({
-                'DTS': dts_list[i],
-                'PTS': pts_list[i],
-                'size': sizes[i],
-                'offset': offsets[i],
-                'flag':flag
-            })
-        frames_sorted = sorted(frames, key=lambda x: x['PTS'])
-        return frames_sorted
+        print(f" handler_type: {self.handler_type}")
+        with open(file_path, 'rb') as file:
+            for i in range(len(self.stsz)):
+                flag = 'audio'
+                if self.handler_type == 'vide':
+                    # flag="B-Frame"
+                    # if i+1 in self.stss:
+                    #     flag="I-Frame"
+                    flag=self.getFrameType(file, offsets[i])
+                    
+                frames.append({
+                    'DTS': dts_list[i],
+                    'PTS': pts_list[i],
+                    'size': sizes[i],
+                    'offset': offsets[i],
+                    'flag':flag
+                })
+            print(f"sort by pts\n")
+            frames_sorted = sorted(frames, key=lambda x: x['PTS'])
+            return frames_sorted
+
+    def getFrameType(self, file, offset):
+        file.seek(offset)
+        box_data = file.read(10)
+        #print(f"offset: {offset} {' '.join(f"{byte:02X}" for byte in box_data)}\n")
+        type = 'IFrame'
+        len, data = struct.unpack(">I6s", box_data[0:10])
+        
+        return self.parse_h264_frame_type(data)
+    
+    def parse_h264_frame_type(self, nal_data):
+        nal_header = nal_data[0]
+        nal_type = nal_header & 0x1F 
+        if nal_type in [5, 7]:
+            print(f"nal type: {nal_type}\n")
+            return "I"
+        elif nal_type == 1:
+            reader = BitReader(nal_data[1:])
+            offset = reader.read_ue()
+            slice_type = reader.read_ue()
+            if slice_type in [0, 3, 5, 8]:
+                return "P"
+            elif slice_type in [1, 6]:
+                return "B"
+            elif slice_type in [2, 7]:
+                return "I"
+        return "Unknown"
 
 #MP4ParserApp
 class MP4ParserApp:
@@ -237,6 +276,7 @@ class MP4ParserApp:
 
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
+            self._file_path = file_path;
             offset = 0
             while True:
                 box_size, box_type, box_data, box_header = self.read_box(file)
@@ -359,7 +399,7 @@ class MP4ParserApp:
         print(f"description tracks count:{len(self.tracks)}")
         for i, track in enumerate(self.tracks):
             print(f"calculate track:{track.trackID}")
-            frames = track.calculate_frame_info()
+            frames = track.calculate_frame_info(self._file_path)
             description += f"track {i+1} frame count: {len(frames)}\n"
             for j, frame in enumerate(frames):
                 description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}, flag={frame['flag']}\n"
@@ -402,6 +442,9 @@ class MP4ParserApp:
 
     def get_hdlr_description(self, box_data):
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
+        if self.currentTrak.handler_type == 'unkown':
+             self.currentTrak.handler_type= handler_type.decode('utf-8', errors='ignore')
+        print(f"current track hdlr type: {handler_type}\n")
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
 
@@ -723,6 +766,7 @@ class MP4ParserApp:
             
         track = TRACK()
         track.trackID=track_id
+        track.handler_type == 'unkown'
         self.tracks.append(track)
         return track
 
