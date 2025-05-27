@@ -116,10 +116,12 @@ class TRACK:
             for i in range(len(self.stsz)):
                 flag = 'audio'
                 if self.handler_type == 'vide':
-                    # flag="B-Frame"
-                    # if i+1 in self.stss:
-                    #     flag="I-Frame"
-                    flag=self.getFrameType(file, offsets[i])
+                    if self.codec_type == "hvcc":
+                        flag="B-Frame"
+                        if i+1 in self.stss:
+                            flag="I-Frame"
+                    elif self.codec_type == "avcc":
+                        flag=self.getFrameType(file, offsets[i])
                     
                 frames.append({
                     'DTS': dts_list[i],
@@ -1140,6 +1142,7 @@ class MP4ParserApp:
         return desc
 
     def get_hvcc_descripition(self, box_data ):
+        self.currentTrak.codec_type = "hvcc";
         if len(box_data) < 23:  
             return
         hvcc_data = box_data[0:]
@@ -1205,6 +1208,7 @@ class MP4ParserApp:
 
     def get_avcc_description(self, box_data):  
         data = box_data[0:]
+        self.currentTrak.codec_type = "avcc";
         if len(data) < 10: return
         config_version = data[0]
         profile = data[1]
