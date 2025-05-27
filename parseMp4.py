@@ -58,6 +58,7 @@ class TRACK:
     def __init__(self):
         self.timescale = 0
         self.handler_type = 'unkown'
+        self.codec_type = "unkown"
         
         self.elst = []
         self.stts = []
@@ -395,9 +396,9 @@ class MP4ParserApp:
     def get_sample_description(self):
         description = f"track count: {len(self.tracks)}\n"
         for i, track in enumerate(self.tracks):
-            description += f"handler_type: {track.handler_type}\n"
             frames = track.calculate_frame_info(self._file_path)
             description += f"track {i+1} frame count: {len(frames)}\n"
+            description += f"handler_type: {track.handler_type}\ncodec: {track.codec_type}\n"
             for j, frame in enumerate(frames):
                 description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}, flag={frame['flag']}\n"
         return description
@@ -1620,7 +1621,6 @@ class MP4ParserApp:
             hex_part += ' '.join(f"{byte:02X}" for byte in chunk2)
             
             ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk1)
-            ascii_part += "  "
             ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
             lines.append(f"{hex_part:<48}  {ascii_part}")
         return '\n'.join(lines)
@@ -1630,7 +1630,6 @@ class MP4ParserApp:
         return hex_part
 
 app = None
-g_fileName = ""
 
 def select_file(root):
     file_path = filedialog.askopenfilename(title="选择文件", filetypes=[("所有文件", "*.*")])
