@@ -142,7 +142,7 @@ class TRACK:
             nal_type = data[0] & 0x1F
             
             if nal_type ==5:
-                return "I"
+                return "IDR"
             elif nal_type == 1:
                 reader = BitReader(data[1:])
                 offset = reader.read_ue()
