@@ -145,7 +145,6 @@ class TRACK:
         nal_header = nal_data[0]
         nal_type = nal_header & 0x1F 
         if nal_type in [5, 7]:
-            print(f"nal type: {nal_type}\n")
             return "I"
         elif nal_type == 1:
             reader = BitReader(nal_data[1:])
@@ -257,7 +256,6 @@ class MP4ParserApp:
         self.parse_fmp4(file_path)
 
     def remove_trees(self):
-        print("remove trees")
         self.main_frame.pack_forget()
         self.root.update_idletasks()
 
@@ -440,7 +438,7 @@ class MP4ParserApp:
 
     def get_hdlr_description(self, box_data):
         version_flags, pre_defined, handler_type = struct.unpack(">I I 4s", box_data[:12])
-        if self.currentTrak.handler_type == 'unkown':
+        if self.currentTrak and self.currentTrak.handler_type == 'unkown':
              self.currentTrak.handler_type= handler_type.decode('utf-8', errors='ignore')
         name = box_data[24:].split(b'\x00', 1)[0].decode('utf-8', 'ignore')
         return f"version: {version_flags >> 24}, flags: {version_flags & 0xFFFFFF}, handler type: {handler_type.decode('utf-8', errors='ignore')} name: {name}"
@@ -1309,14 +1307,11 @@ class MP4ParserApp:
     def parse_encv_sample_entry(self, entry_data, offset, parent_id, base_desc):
         if len(entry_data) < 78:  
             return
-        print("encv entry\n")
-        print(f"box len: {len(entry_data)}")
-            
         entry_data = entry_data[16:]
         width, height = struct.unpack('>HH', entry_data[16:20])
-        print(f"wh:{width} {height}")
+
         horizres, vertres = struct.unpack('>II', entry_data[20:28])
-        print(f"hv:{horizres} {vertres}")
+
         frame_count = entry_data[28]
         depth = entry_data[61]
         desc = f"{base_desc}\nEncoded Video Sample Entry\n" \
