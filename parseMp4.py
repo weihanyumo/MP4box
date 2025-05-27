@@ -137,8 +137,8 @@ class TRACK:
         pos = 0
         while True:
             file.seek(offset+pos)
-            box_data = file.read(10)
-            len,data = struct.unpack(">I6s", box_data[0:10])
+            box_data = file.read(8)
+            len,data = struct.unpack(">I4s", box_data[0:8])
             nal_type = data[0] & 0x1F
             
             if nal_type ==5:
@@ -154,7 +154,6 @@ class TRACK:
                 else:
                     return "I"
             else:
-                print(f"pos: {pos} len:{len} nal_type:{nal_type} data: {' '.join(f"{byte:02X}" for byte in data)}\n")
                 pos += len+4
 
 #MP4ParserApp
