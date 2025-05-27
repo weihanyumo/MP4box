@@ -215,13 +215,11 @@ class MP4ParserApp:
         desc_text_frame.pack(fill=tk.BOTH, expand=True)
 
         desc_scroll_y = tk.Scrollbar(desc_text_frame, orient=tk.VERTICAL)
-        self.description_text = tk.Text(
-            desc_text_frame, height=10, wrap="word", font=("Arial", 10),
-            yscrollcommand=desc_scroll_y.set
-        )
-        desc_scroll_y.config(command=self.description_text.yview)
+        self.frame_listbox = tk.Listbox(desc_text_frame, height=10, font=("Arial", 10))
+        self.frame_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        desc_scroll_y.config(command=self.frame_listbox.yview)
+        self.frame_listbox.config(yscrollcommand=desc_scroll_y.set)
 
-        self.description_text.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         desc_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
         hex_frame = tk.Frame(bottom_frame)
@@ -256,19 +254,47 @@ class MP4ParserApp:
     def remove_trees(self):
         self.main_frame.pack_forget()
         self.root.update_idletasks()
+    
+    def show_frame_list(self):
+        if not self.tracks:
+            return
+
+        self.frame_info_list = []
+
+        self.frame_listbox.delete(0, tk.END)
+
+        for track_index, track in enumerate(self.tracks):
+            frames = track.calculate_frame_info(self._file_path)
+            for idx, frame in enumerate(frames):
+                self.frame_info_list.append((track_index, idx, frame))
+                display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame['PTS']:.3f} offset: {frame['offset']} size:{frame['size']} Flag: {frame['flag']}"
+                self.frame_listbox.insert(tk.END, display_text)
+
+        self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
 
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
         if selected_item:
             description = self.box_descriptions.get(selected_item[0], "No description available")
             if selected_item[0] == self.mdat_item_id:
-                description = self.get_sample_description()
-            self.description_text.delete("1.0", tk.END)
-            self.description_text.insert(tk.END, description)
+                self.show_frame_list()
 
             hex_data = self.box_hex_data.get(selected_item[0], "No hex data available")
             self.hex_text.delete("1.0", tk.END)
             self.hex_text.insert(tk.END, hex_data)
+
+    def on_frame_selected(self, event):
+        selected = self.frame_listbox.curselection()
+        if not selected:
+            return
+        index = selected[0]
+        if index < len(self.frame_info_list):
+            track_index, frame_index, frame = self.frame_info_list[index]
+            with open(self.file_path, 'rb') as file:
+                file.seek(frame['offset'])
+                data =  box_header = file.read(frame['size'])
+                self.hex_text.delete("1.0", tk.END)
+                self.hex_text.insert(tk.END, self.get_hex_data(data, "mdat"))
 
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
