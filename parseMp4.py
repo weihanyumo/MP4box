@@ -134,30 +134,28 @@ class TRACK:
             return frames_sorted
 
     def getFrameType(self, file, offset):
-        file.seek(offset)
-        box_data = file.read(10)
-        #print(f"offset: {offset} {' '.join(f"{byte:02X}" for byte in box_data)}\n")
-        type = 'IFrame'
-        len, data = struct.unpack(">I6s", box_data[0:10])
-        
-        return self.parse_h264_frame_type(data)
-    
-    def parse_h264_frame_type(self, nal_data):
-        nal_header = nal_data[0]
-        nal_type = nal_header & 0x1F 
-        if nal_type in [5, 7]:
-            return "I"
-        elif nal_type == 1:
-            reader = BitReader(nal_data[1:])
-            offset = reader.read_ue()
-            slice_type = reader.read_ue()
-            if slice_type in [0, 3, 5, 8]:
-                return "P"
-            elif slice_type in [1, 6]:
-                return "B"
-            elif slice_type in [2, 7]:
+        pos = 0
+        while True:
+            file.seek(offset+pos)
+            box_data = file.read(10)
+            len,data = struct.unpack(">I6s", box_data[0:10])
+            nal_type = data[0] & 0x1F
+            
+            if nal_type ==5:
                 return "I"
-        return "Unknown"
+            elif nal_type == 1:
+                reader = BitReader(data[1:])
+                offset = reader.read_ue()
+                slice_type = reader.read_ue()
+                if slice_type in [0, 3, 5, 8]:
+                    return "P"
+                elif slice_type in [1, 6]:
+                    return "B"
+                else:
+                    return "I"
+            else:
+                print(f"pos: {pos} len:{len} nal_type:{nal_type} data: {' '.join(f"{byte:02X}" for byte in data)}\n")
+                pos += len+4
 
 #MP4ParserApp
 class MP4ParserApp:
@@ -1609,8 +1607,8 @@ class MP4ParserApp:
 
     def get_hex_data(self, box_data, box_type):
         lines = []
-        if box_type == "mdat":
-            return lines
+        # if box_type == "mdat":
+        #     return lines
         for i in range(0, len(box_data), 16):
             chunk = box_data[i:i+16]
             chunk1 = box_data[i:i+8]
