@@ -278,6 +278,11 @@ class MP4ParserApp:
             description = self.box_descriptions.get(selected_item[0], "No description available")
             if selected_item[0] == self.mdat_item_id:
                 self.show_frame_list()
+            else:
+                self.frame_listbox.delete(0, tk.END)  # 清除旧内容
+                lines = description.splitlines()  # 按 \n 分行
+                for line in lines:
+                    self.frame_listbox.insert(tk.END, line)
 
             hex_data = self.box_hex_data.get(selected_item[0], "No hex data available")
             self.hex_text.delete("1.0", tk.END)
