@@ -202,12 +202,10 @@ class MP4ParserApp:
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
 
-        bottom_frame = tk.Frame(self.main_frame)
-        bottom_frame.pack(fill=tk.BOTH, expand=True)
+        bottom_pane = tk.PanedWindow(self.main_frame, orient=tk.HORIZONTAL)
+        bottom_pane.pack(fill=tk.BOTH, expand=True)
 
-        desc_frame = tk.Frame(bottom_frame)
-        desc_frame.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(0, 5))
-
+        desc_frame = tk.Frame(bottom_pane)
         self.description_label = tk.Label(desc_frame, text="Box Description:", font=("Arial", 12, "bold"))
         self.description_label.pack(anchor="w")
 
@@ -219,12 +217,11 @@ class MP4ParserApp:
         self.frame_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         desc_scroll_y.config(command=self.frame_listbox.yview)
         self.frame_listbox.config(yscrollcommand=desc_scroll_y.set)
-
         desc_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
-        hex_frame = tk.Frame(bottom_frame)
-        hex_frame.pack(side=tk.RIGHT, fill=tk.BOTH, expand=True, padx=(5, 0))
+        bottom_pane.add(desc_frame, minsize=100, width=500)
 
+        hex_frame = tk.Frame(bottom_pane)
         self.hex_label = tk.Label(hex_frame, text="Hex Data:", font=("Arial", 12, "bold"))
         self.hex_label.pack(anchor="w")
 
@@ -248,7 +245,10 @@ class MP4ParserApp:
 
         hex_text_frame.grid_rowconfigure(0, weight=1)
         hex_text_frame.grid_columnconfigure(0, weight=1)
-        
+
+        bottom_pane.add(hex_frame, minsize=100, width=500)
+
+
         self.parse_fmp4(file_path)
 
     def remove_trees(self):
