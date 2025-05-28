@@ -283,8 +283,9 @@ class MP4ParserApp:
                 lines = description.splitlines()  # 按 \n 分行
                 for line in lines:
                     self.frame_listbox.insert(tk.END, line)
-
-            hex_data = self.box_hex_data.get(selected_item[0], "No hex data available")
+            values = self.tree.item(selected_item[0], "values")
+            box_type = values[0]
+            hex_data = self.get_hex_data(self.box_hex_data.get(selected_item[0], "No hex data available"),  box_type )
             self.hex_text.delete("1.0", tk.END)
             self.hex_text.insert(tk.END, hex_data)
 
@@ -313,7 +314,7 @@ class MP4ParserApp:
                 #description = f"size: {box_size}, des: {description}"
 
                 
-                hex_data = self.get_hex_data(box_header + box_data, box_type) 
+                hex_data = box_header + box_data
                 self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data)
                 offset += box_size  
 
@@ -1601,7 +1602,7 @@ class MP4ParserApp:
                 break
             else:
                 description = self.get_box_description( offset, box_size, box_type, box_data)
-                hex_data = self.get_hex_data(box_header+box_data, box_type)
+                hex_data = box_header+box_data
                 self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
                 offset += box_size
  
@@ -1637,8 +1638,8 @@ class MP4ParserApp:
 
     def get_hex_data(self, box_data, box_type):
         lines = []
-        # if box_type == "mdat":
-        #     return lines
+        if box_type == "mdat":
+            return lines
         for i in range(0, len(box_data), 16):
             chunk = box_data[i:i+16]
             chunk1 = box_data[i:i+8]
