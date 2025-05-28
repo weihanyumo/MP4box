@@ -278,9 +278,11 @@ class MP4ParserApp:
 
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
+        self.selected_mada = False
         if selected_item:
             description = self.box_descriptions.get(selected_item[0], "No description available")
             if selected_item[0] == self.mdat_item_id:
+                self.selected_mada = True
                 self.show_frame_list()
             else:
                 self.frame_listbox.delete(0, tk.END)  # 清除旧内容
@@ -295,7 +297,7 @@ class MP4ParserApp:
 
     def on_frame_selected(self, event):
         selected = self.frame_listbox.curselection()
-        if not selected:
+        if not selected or not self.selected_mada:
             return
         index = selected[0]
         if index < len(self.frame_info_list):
