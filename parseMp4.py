@@ -158,6 +158,7 @@ class TRACK:
 
 #MP4ParserApp
 class MP4ParserApp:
+    
     def __init__(self, root, file_path):
         self.root = root
         self.root.title("MP4 Box Parser")
@@ -175,6 +176,7 @@ class MP4ParserApp:
         self.stss = []
         self.mdat_item_id = 0
         self.totlalFrameCount = 0;
+        self.frame_info_list = []
         
         # main frame
         self.main_frame = tk.Frame(self.root)
@@ -259,16 +261,18 @@ class MP4ParserApp:
         if not self.tracks:
             return
 
-        self.frame_info_list = []
-
         self.frame_listbox.delete(0, tk.END)
-
-        for track_index, track in enumerate(self.tracks):
-            frames = track.calculate_frame_info(self._file_path)
-            for idx, frame in enumerate(frames):
-                self.frame_info_list.append((track_index, idx, frame))
+        if len(self.frame_info_list) > 1:
+            for track_index, idx,frame in self.frame_info_list:
                 display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame['PTS']:.3f} offset: {frame['offset']} size:{frame['size']} Flag: {frame['flag']}"
-                self.frame_listbox.insert(tk.END, display_text)
+                self.frame_listbox.insert(tk.END, display_text)           
+        else:
+            for track_index, track in enumerate(self.tracks):
+                frames = track.calculate_frame_info(self._file_path)
+                for idx, frame in enumerate(frames):
+                    self.frame_info_list.append((track_index, idx, frame))
+                    display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame['PTS']:.3f} offset: {frame['offset']} size:{frame['size']} Flag: {frame['flag']}"
+                    self.frame_listbox.insert(tk.END, display_text)
 
         self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
 
@@ -300,7 +304,7 @@ class MP4ParserApp:
                 file.seek(frame['offset'])
                 data =  box_header = file.read(frame['size'])
                 self.hex_text.delete("1.0", tk.END)
-                self.hex_text.insert(tk.END, self.get_hex_data(data, "mdat"))
+                self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
 
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
@@ -332,6 +336,64 @@ class MP4ParserApp:
 
     def read_size(self, file, size):
         return file.read(size)
+
+    def get_hex_data(self, box_data, box_type):
+        lines = []
+        if box_type == "mdat":
+            return lines
+        for i in range(0, len(box_data), 16):
+            chunk = box_data[i:i+16]
+            chunk1 = box_data[i:i+8]
+            chunk2 = box_data[i+8:i+16]
+            
+            hex_part = ' '.join(f"{byte:02X}" for byte in chunk1)
+            hex_part += "  "
+            hex_part += ' '.join(f"{byte:02X}" for byte in chunk2)
+            
+            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk1)
+            ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
+            lines.append(f"{hex_part:<48}  {ascii_part}")
+        return '\n'.join(lines)
+
+    def to_hex(self, box_data):
+        hex_part = ' '.join(f"{byte:02X}" for byte in box_data)
+        return hex_part
+
+    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
+        start_address = f"{offset:d}"
+        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
+        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
+            nested_offset = offset + 8  
+            if box_type == 'moof':
+                self.moof_startPos = offset
+            if box_type == 'meta':
+                nested_offset = offset + 12
+                box_data = box_data[4:]
+            if box_type == 'stsd':
+                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
+                return 
+                
+            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
+        self.box_descriptions[item_id] = description  
+        self.box_hex_data[item_id] = hex_data 
+        if box_type == 'mdat':
+            self.mdat_item_id = item_id;
+
+    def read_nested_boxes(self, box_file, offset, parent_id):
+        while True:
+            box_size, box_type, box_data, box_header = self.read_box(box_file)
+            if not box_size:
+                break
+            else:
+                description = self.get_box_description( offset, box_size, box_type, box_data)
+                hex_data = box_header+box_data
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
+                offset += box_size
+ 
+    def display_frame_info(self):
+        total_frames = len(self.frame_start_positions)
+        frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
+    
 
     def get_box_description(self, boxOffset, boxSize, box_type, box_data):
         if box_type == "ftyp":
@@ -421,16 +483,6 @@ class MP4ParserApp:
         minor_version = struct.unpack('>I', box_data[4:8])[0]
         compatible_brands = [box_data[i:i+4].decode('utf-8', errors='ignore') for i in range(8, len(box_data), 4)]
         return f"主品牌: {major_brand}, 次版本: {minor_version}, 兼容品牌: {', '.join(compatible_brands)}"
-
-    def get_sample_description(self):
-        description = f"track count: {len(self.tracks)}\n"
-        for i, track in enumerate(self.tracks):
-            frames = track.calculate_frame_info(self._file_path)
-            description += f"track {i+1} frame count: {len(frames)}\n"
-            description += f"handler_type: {track.handler_type}\ncodec: {track.codec_type}\n"
-            for j, frame in enumerate(frames):
-                description += f"Frame {j + 1}: PTS={frame['PTS']:.3f}, DTS={frame['DTS']:.3f}, Size={frame['size']}, offset={frame['offset']}, flag={frame['flag']}\n"
-        return description
 
     def get_mvhd_description(self, box_data):
         offset = 0
@@ -1575,41 +1627,6 @@ class MP4ParserApp:
 
         return pps
 
-    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
-        start_address = f"{offset:d}"
-        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
-        if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
-            nested_offset = offset + 8  
-            if box_type == 'moof':
-                self.moof_startPos = offset
-            if box_type == 'meta':
-                nested_offset = offset + 12
-                box_data = box_data[4:]
-            if box_type == 'stsd':
-                self.parse_stsd_box(box_type, box_size, box_data, offset, description, hex_data, item_id)
-                return 
-                
-            self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
-        self.box_descriptions[item_id] = description  
-        self.box_hex_data[item_id] = hex_data 
-        if box_type == 'mdat':
-            self.mdat_item_id = item_id;
-
-    def read_nested_boxes(self, box_file, offset, parent_id):
-        while True:
-            box_size, box_type, box_data, box_header = self.read_box(box_file)
-            if not box_size:
-                break
-            else:
-                description = self.get_box_description( offset, box_size, box_type, box_data)
-                hex_data = box_header+box_data
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
-                offset += box_size
- 
-    def display_frame_info(self):
-        total_frames = len(self.frame_start_positions)
-        frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
-    
     def parse_hevc_profile_tier_level(self, reader, max_sub_layers):
         ptl = {
             'general_profile_space': reader.read_bits(2),
@@ -1635,28 +1652,6 @@ class MP4ParserApp:
                 ptl[f'sub_layer_{i}_level_idc'] = reader.read_bits(8)
         
         return ptl
-
-    def get_hex_data(self, box_data, box_type):
-        lines = []
-        if box_type == "mdat":
-            return lines
-        for i in range(0, len(box_data), 16):
-            chunk = box_data[i:i+16]
-            chunk1 = box_data[i:i+8]
-            chunk2 = box_data[i+8:i+16]
-            
-            hex_part = ' '.join(f"{byte:02X}" for byte in chunk1)
-            hex_part += "  "
-            hex_part += ' '.join(f"{byte:02X}" for byte in chunk2)
-            
-            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk1)
-            ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
-            lines.append(f"{hex_part:<48}  {ascii_part}")
-        return '\n'.join(lines)
-
-    def to_hex(self, box_data):
-        hex_part = ' '.join(f"{byte:02X}" for byte in box_data)
-        return hex_part
 
 app = None
 
