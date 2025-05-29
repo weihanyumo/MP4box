@@ -183,8 +183,11 @@ class MP4ParserApp:
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
         self.file_label = tk.Label(self.main_frame, text=file_path, font=("Arial", 12, "bold"))
         self.file_label.pack(anchor="w")
+        
+        vertical_pane = tk.PanedWindow(self.main_frame, orient=tk.VERTICAL)
+        vertical_pane.pack(fill=tk.BOTH, expand=True)
         # 左侧 Treeview 组件
-        tree_frame = tk.Frame(self.main_frame)
+        tree_frame = tk.Frame(vertical_pane)
         tree_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
         self.tree = ttk.Treeview(tree_frame, columns=("Type",  "Start Address", "Size","Description"))
@@ -203,41 +206,41 @@ class MP4ParserApp:
         self.tree.pack(fill=tk.BOTH, expand=True)
 
         self.tree.bind("<<TreeviewSelect>>", self.on_tree_select)
-
-        bottom_pane = tk.PanedWindow(self.main_frame, orient=tk.HORIZONTAL)
+        vertical_pane.add(tree_frame)
+        
+        bottom_pane = tk.PanedWindow(vertical_pane, orient=tk.HORIZONTAL)
         bottom_pane.pack(fill=tk.BOTH, expand=True)
 
-        desc_frame = tk.Frame(bottom_pane)
-        self.description_label = tk.Label(desc_frame, text="Box Description:", font=("Arial", 12, "bold"))
+        box_description_frame = tk.Frame(bottom_pane)
+        self.description_label = tk.Label(box_description_frame, text="Box Description:", font=("Arial", 12, "bold"))
         self.description_label.pack(anchor="w")
 
-        desc_text_frame = tk.Frame(desc_frame)
-        desc_text_frame.pack(fill=tk.BOTH, expand=True)
-
-        desc_scroll_y = tk.Scrollbar(desc_text_frame, orient=tk.VERTICAL)
-        self.frame_listbox = tk.Listbox(desc_text_frame, height=10, font=("Arial", 10))
+        desc_scroll_y = tk.Scrollbar(box_description_frame, orient=tk.VERTICAL)
+        self.frame_listbox = tk.Listbox(box_description_frame, height=10, font=("Arial", 10))
         self.frame_listbox.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         desc_scroll_y.config(command=self.frame_listbox.yview)
         self.frame_listbox.config(yscrollcommand=desc_scroll_y.set)
         desc_scroll_y.pack(side=tk.RIGHT, fill=tk.Y)
 
-        bottom_pane.add(desc_frame, minsize=100, width=500)
+        bottom_pane.add(box_description_frame, minsize=100, width=500)
 
         hex_frame = tk.Frame(bottom_pane)
         self.hex_label = tk.Label(hex_frame, text="Hex Data:", font=("Arial", 12, "bold"))
         self.hex_label.pack(anchor="w")
 
-        hex_text_frame = tk.Frame(hex_frame)
-        hex_text_frame.pack(fill=tk.BOTH, expand=True)
+        hex_data_frame = tk.Frame(hex_frame)
+        hex_data_frame.pack(fill=tk.BOTH, expand=True)
 
-        hex_scroll_x = tk.Scrollbar(hex_text_frame, orient=tk.HORIZONTAL)
-        hex_scroll_y = tk.Scrollbar(hex_text_frame, orient=tk.VERTICAL)
+        hex_scroll_x = tk.Scrollbar(hex_data_frame, orient=tk.HORIZONTAL)
+        hex_scroll_y = tk.Scrollbar(hex_data_frame, orient=tk.VERTICAL)
 
         self.hex_text = tk.Text(
-            hex_text_frame, height=10, wrap="none", font=("Courier", 10),
+            hex_data_frame, height=10, wrap="none", font=("Courier", 10),
             yscrollcommand=hex_scroll_y.set, xscrollcommand=hex_scroll_x.set
         )
 
+        self.hex_text.bind("<<Selection>>", self.on_hex_selection)
+        
         hex_scroll_x.config(command=self.hex_text.xview)
         hex_scroll_y.config(command=self.hex_text.yview)
 
@@ -245,11 +248,11 @@ class MP4ParserApp:
         hex_scroll_y.grid(row=0, column=1, sticky="ns")
         hex_scroll_x.grid(row=1, column=0, sticky="ew")
 
-        hex_text_frame.grid_rowconfigure(0, weight=1)
-        hex_text_frame.grid_columnconfigure(0, weight=1)
+        hex_data_frame.grid_rowconfigure(0, weight=1)
+        hex_data_frame.grid_columnconfigure(0, weight=1)
 
         bottom_pane.add(hex_frame, minsize=100, width=500)
-
+        vertical_pane.add(bottom_pane)
 
         self.parse_fmp4(file_path)
 
@@ -308,6 +311,24 @@ class MP4ParserApp:
                 self.hex_text.delete("1.0", tk.END)
                 self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
 
+    def on_hex_selection(self, event):
+        try:
+            selection = self.hex_text.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
+        except tk.TclError:
+            return
+        try:
+            hex_str = selection.replace(" ", "").replace("\n", "")
+            if len(hex_str) % 2 != 0:
+                return 
+
+            byte_values = [int(hex_str[i:i+2], 16) for i in range(0, len(hex_str), 2)]
+            int_value = int.from_bytes(byte_values, byteorder='big') 
+            self.hex_label.config(text=f"Hex Data: Decimal {int_value}")
+
+        except Exception as e:
+            print("Invalid selection:", e)
+
+    
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
             self._file_path = file_path;
@@ -478,7 +499,7 @@ class MP4ParserApp:
             return self.get_encrypted_sample_entry(box_data)
           
             
-        return f"未知的 Box 类型: {box_type}"
+        return f"{box_type}"
 
     def get_ftyp_description(self, box_data):
         major_brand = box_data[:4].decode('utf-8', errors='ignore')
