@@ -11,7 +11,8 @@ import uuid
 import time
 import math
 from enum import Enum, auto, unique
-
+from dataclasses import dataclass
+from typing import Optional
 
 class TrackType(Enum):
     Unkonw = 0
@@ -53,7 +54,24 @@ class BitReader:
     def read_se(self):
         ue = self.read_ue()
         return (ue + 1) // 2 if (ue % 2) else -(ue // 2)
+
+
+
+@dataclass
+class FrameInfo:
+    index: int
+    pts: float
+    dts: float
+    duration: float
+    offset: int
+    size: int
+    flags:str
+    data: Optional[bytes] = None
     
+    def __init__(self):
+        index = 0
+    
+        
 class TRACK:
     def __init__(self):
         self.timescale = 0
@@ -123,14 +141,16 @@ class TRACK:
                     elif self.codec_type == "avcc":
                         flag=self.getFrameType(file, offsets[i])
                     
-                frames.append({
-                    'DTS': dts_list[i],
-                    'PTS': pts_list[i],
-                    'size': sizes[i],
-                    'offset': offsets[i],
-                    'flag':flag
-                })
-            frames_sorted = sorted(frames, key=lambda x: x['PTS'])
+               
+                frame = FrameInfo()
+                frame.dts = dts_list[i]
+                frame.pts = pts_list[i]
+                frame.size = sizes[i]
+                frame.offset = offsets[i]
+                frame.flags = flag
+                frames.append(frame)
+                
+            frames_sorted = sorted(frames, key=lambda f: f.pts)
             return frames_sorted
 
     def getFrameType(self, file, offset):
@@ -274,7 +294,7 @@ class MP4ParserApp:
                 frames = track.calculate_frame_info(self._file_path)
                 for idx, frame in enumerate(frames):
                     self.frame_info_list.append((track_index, idx, frame))
-                    display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame['PTS']:.3f} offset: {frame['offset']} size:{frame['size']} Flag: {frame['flag']}"
+                    display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flag: {frame.flags}"
                     self.frame_listbox.insert(tk.END, display_text)
 
         self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
@@ -283,11 +303,11 @@ class MP4ParserApp:
         selected_item = self.tree.selection()
         self.selected_mada = False
         if selected_item:
-            description = self.box_descriptions.get(selected_item[0], "No description available")
             if selected_item[0] == self.mdat_item_id:
                 self.selected_mada = True
                 self.show_frame_list()
             else:
+                description = self.box_descriptions.get(selected_item[0], "No description available")
                 self.frame_listbox.delete(0, tk.END)  # 清除旧内容
                 lines = description.splitlines()  # 按 \n 分行
                 for line in lines:
@@ -306,8 +326,8 @@ class MP4ParserApp:
         if index < len(self.frame_info_list):
             track_index, frame_index, frame = self.frame_info_list[index]
             with open(self.file_path, 'rb') as file:
-                file.seek(frame['offset'])
-                data =  box_header = file.read(frame['size'])
+                file.seek(frame.offset)
+                data =  box_header = file.read(frame.size)
                 self.hex_text.delete("1.0", tk.END)
                 self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
 
@@ -337,12 +357,8 @@ class MP4ParserApp:
                 box_size, box_type, box_data, box_header = self.read_box(file)
                 if not box_size:
                     break  
-                description = self.get_box_description(offset, box_size, box_type, box_data)
-                #description = f"size: {box_size}, des: {description}"
-
-                
                 hex_data = box_header + box_data
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data)
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, hex_data)
                 offset += box_size  
 
     def read_box(self, file):
@@ -382,8 +398,9 @@ class MP4ParserApp:
         hex_part = ' '.join(f"{byte:02X}" for byte in box_data)
         return hex_part
 
-    def add_box_to_treeview(self, box_type, box_size, box_data, offset, description, hex_data, parent_id=""):
+    def add_box_to_treeview(self, box_type, box_size, box_data, offset, hex_data, parent_id=""):
         start_address = f"{offset:d}"
+        description = self.get_box_description(offset, box_size, box_type, box_data)
         item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
         if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
             nested_offset = offset + 8  
@@ -408,9 +425,8 @@ class MP4ParserApp:
             if not box_size:
                 break
             else:
-                description = self.get_box_description( offset, box_size, box_type, box_data)
                 hex_data = box_header+box_data
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, description, hex_data, parent_id)
+                self.add_box_to_treeview(box_type, box_size, box_data, offset, hex_data, parent_id)
                 offset += box_size
  
     def display_frame_info(self):
@@ -1691,6 +1707,7 @@ def select_file(root):
 if __name__ == "__main__":
     root = tk.Tk()
     root.geometry("1000x600")
+    root.iconbitmap("icon.ico")
 
     button = tk.Button(root, text="选择文件", command=lambda: select_file(root))
     button.pack(anchor="w", padx=10, pady=10)
