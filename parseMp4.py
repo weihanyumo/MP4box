@@ -210,18 +210,18 @@ class MP4ParserApp:
         tree_frame = tk.Frame(vertical_pane)
         tree_frame.pack(side=tk.TOP, fill=tk.BOTH, expand=True)
 
-        self.tree = ttk.Treeview(tree_frame, columns=("Type",  "Start Address", "Size","Description"))
+        self.tree = ttk.Treeview(tree_frame, columns=("Type",  "Start Address", "Size"))
         self.tree.heading("#0", text="Box Name", anchor="w")
         self.tree.heading("Type", text="Type", anchor="w")
         self.tree.heading("Size", text="Size (bytes)", anchor="w")
         self.tree.heading("Start Address", text="Start Address", anchor="w")
-        self.tree.heading("Description", text="description", anchor="w")
+       # self.tree.heading("Description", text="description", anchor="w")
 
         self.tree.column("#0", width=200)
         self.tree.column("Type", width=100)
         self.tree.column("Size", width=100)
         self.tree.column("Start Address", width=150)        
-        self.tree.column("Description", width=300)
+        #self.tree.column("Description", width=300)
 
         self.tree.pack(fill=tk.BOTH, expand=True)
 
@@ -399,7 +399,7 @@ class MP4ParserApp:
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, hex_data, parent_id=""):
         start_address = f"{offset:d}"
         description = self.get_box_description(offset, box_size, box_type, box_data)
-        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size, description))
+        item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size))
         if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
             nested_offset = offset + 8  
             if box_type == 'moof':
@@ -1387,7 +1387,7 @@ class MP4ParserApp:
             entry_type = remaining_data[4:8].decode('ascii')
             entry_desc = f"Sample Entry {i+1}\nType: {entry_type}\nSize: {entry_size}"
             entry_id = self.tree.insert(item_id, "end", text=f"{entry_type} Box", 
-                                      values=(entry_type, f"{entry_offset}", entry_size, entry_desc))
+                                      values=(entry_type, f"{entry_offset}", entry_size))
             self.box_descriptions[entry_id] = entry_desc  
             self.box_hex_data[entry_id] = self.get_hex_data(remaining_data[:entry_size], box_type) 
             
