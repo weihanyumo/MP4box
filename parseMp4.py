@@ -336,7 +336,10 @@ class MP4ParserApp:
 
     def on_frame_selected(self, event):
         selected = self.frame_listbox.curselection()
-        #print(f"self.selectd_item:{self.selected_item} self.mdat_item_id:{self.mdat_item_id}\n")
+        if not selected:
+            print("no seletctd\n")
+            return
+        # print(f"selected:{selected} self.selectd_item:{self.selected_item} self.mdat_item_id:{self.mdat_item_id}\n")
         if self.selected_item == self.mdat_item_id:
             index = selected[0]
             if index < len(self.frame_info_list):
