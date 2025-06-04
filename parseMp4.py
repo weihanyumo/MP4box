@@ -320,7 +320,7 @@ class MP4ParserApp:
                 self.frame_listbox.delete(0, tk.END)
                 if len(self.frame_info_list) >= 1:
                     for frame in self.frame_info_list:
-                        display_text = f" PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags}"
+                        display_text = f" PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags:02x}"
                         self.frame_listbox.insert(tk.END, display_text)           
 
                 self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
