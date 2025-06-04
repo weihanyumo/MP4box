@@ -132,14 +132,14 @@ class TRACK:
         frames = []
         with open(file_path, 'rb') as file:
             for i in range(len(self.stsz)):
-                flag = 'audio'
+                flags = 'audio'
                 if self.handler_type == 'vide':
                     if self.codec_type == "hvcc":
-                        flag="B-Frame"
+                        flags="B-Frame"
                         if i+1 in self.stss:
                             flag="I-Frame"
                     elif self.codec_type == "avcc":
-                        flag=self.getFrameType(file, offsets[i])
+                        flags=self.getFrameType(file, offsets[i])
                     
                
                 frame = FrameInfo()
@@ -147,7 +147,7 @@ class TRACK:
                 frame.pts = pts_list[i]
                 frame.size = sizes[i]
                 frame.offset = offsets[i]
-                frame.flags = flag
+                frame.flags = flags
                 frames.append(frame)
                 
             frames_sorted = sorted(frames, key=lambda f: f.pts)
@@ -194,9 +194,12 @@ class MP4ParserApp:
         self.currentTrak = {}
         self.moof_startPos =0
         self.stss = []
-        self.mdat_item_id = 0
+        self.mdat_item_id = -1
         self.totlalFrameCount = 0;
         self.frame_info_list = []
+        self.truns = {}
+        self.trunItems=[]
+        self.selected_item = None
         
         # main frame
         self.main_frame = tk.Frame(self.root)
@@ -277,35 +280,50 @@ class MP4ParserApp:
         self.parse_fmp4(file_path)
 
     def remove_trees(self):
+        self.trunItems.clear
+        self.frame_listbox.delete(0, tk.END)
         self.main_frame.pack_forget()
         self.root.update_idletasks()
     
-    def show_frame_list(self):
+    def show_frame_list(self,frame_info_list ):
         if not self.tracks:
             return
 
         self.frame_listbox.delete(0, tk.END)
-        if len(self.frame_info_list) > 1:
-            for track_index, idx,frame in self.frame_info_list:
-                display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame['PTS']:.3f} offset: {frame['offset']} size:{frame['size']} Flag: {frame['flag']}"
+        if len(frame_info_list) >= 1:
+            for track_index, idx,frame in frame_info_list:
+                display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags}"
                 self.frame_listbox.insert(tk.END, display_text)           
-        else:
-            for track_index, track in enumerate(self.tracks):
-                frames = track.calculate_frame_info(self._file_path)
-                for idx, frame in enumerate(frames):
-                    self.frame_info_list.append((track_index, idx, frame))
-                    display_text = f"Track {track_index + 1}  Frame {idx + 1}  PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flag: {frame.flags}"
-                    self.frame_listbox.insert(tk.END, display_text)
 
         self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
-
+        
+    def isItemTrun(self, item_id):
+        #print(f"self.trunItems count:{self.trunItems} item_id:{item_id}\n")
+        return item_id in self.trunItems
+    
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
-        self.selected_mada = False
+        self.selected_item = None
         if selected_item:
+            self.selected_item = selected_item[0];
             if selected_item[0] == self.mdat_item_id:
                 self.selected_mada = True
-                self.show_frame_list()
+                if len(self.frame_info_list) < 1:
+                    for track_index, track in enumerate(self.tracks):
+                        frames = track.calculate_frame_info(self._file_path)
+                        for idx, frame in enumerate(frames):
+                            self.frame_info_list.append((track_index, idx, frame))
+        
+                self.show_frame_list(self.frame_info_list)
+            elif self.isItemTrun(selected_item[0]):
+                self.frame_info_list = self.truns[selected_item[0]]
+                self.frame_listbox.delete(0, tk.END)
+                if len(self.frame_info_list) >= 1:
+                    for frame in self.frame_info_list:
+                        display_text = f" PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags}"
+                        self.frame_listbox.insert(tk.END, display_text)           
+
+                self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
             else:
                 description = self.box_descriptions.get(selected_item[0], "No description available")
                 self.frame_listbox.delete(0, tk.END)  # 清除旧内容
@@ -318,16 +336,26 @@ class MP4ParserApp:
 
     def on_frame_selected(self, event):
         selected = self.frame_listbox.curselection()
-        if not selected or not self.selected_mada:
-            return
-        index = selected[0]
-        if index < len(self.frame_info_list):
-            track_index, frame_index, frame = self.frame_info_list[index]
-            with open(self.file_path, 'rb') as file:
-                file.seek(frame.offset)
-                data =  box_header = file.read(frame.size)
-                self.hex_text.delete("1.0", tk.END)
-                self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
+        #print(f"self.selectd_item:{self.selected_item} self.mdat_item_id:{self.mdat_item_id}\n")
+        if self.selected_item == self.mdat_item_id:
+            index = selected[0]
+            if index < len(self.frame_info_list):
+                track_index, frame_index, frame = self.frame_info_list[index]
+                with open(self.file_path, 'rb') as file:
+                    file.seek(frame.offset)
+                    data =  box_header = file.read(frame.size)
+                    self.hex_text.delete("1.0", tk.END)
+                    self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
+        elif self.isItemTrun(self.selected_item):
+            index = selected[0]
+            # print(f"selected index:{index}\n")
+            if index < len(self.frame_info_list):
+                frame = self.frame_info_list[index]
+                with open(self.file_path, 'rb') as file:
+                    file.seek(frame.offset)
+                    data =  box_header = file.read(frame.size)
+                    self.hex_text.delete("1.0", tk.END)
+                    self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
 
     def on_hex_selection(self, event):
         try:
@@ -398,8 +426,8 @@ class MP4ParserApp:
 
     def add_box_to_treeview(self, box_type, box_size, box_data, offset, hex_data, parent_id=""):
         start_address = f"{offset:d}"
-        description = self.get_box_description(offset, box_size, box_type, box_data)
         item_id = self.tree.insert(parent_id, "end", text=f"{box_type} Box", values=(box_type, start_address, box_size))
+        description = self.get_box_description(offset, box_size, box_type, box_data, item_id)
         if box_type in ['moov', 'trak', 'mdia', 'minf', 'stbl', 'udta', 'edts', 'moof', 'traf','dinf', 'meta','mvex', 'sinf', 'stsd', 'schi']:
             nested_offset = offset + 8  
             if box_type == 'moof':
@@ -413,6 +441,7 @@ class MP4ParserApp:
                 
             self.read_nested_boxes(io.BytesIO(box_data), nested_offset, item_id)
         self.box_descriptions[item_id] = description  
+
         self.box_hex_data[item_id] = hex_data 
         if box_type == 'mdat':
             self.mdat_item_id = item_id;
@@ -432,7 +461,7 @@ class MP4ParserApp:
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
     
 
-    def get_box_description(self, boxOffset, boxSize, box_type, box_data):
+    def get_box_description(self, boxOffset, boxSize, box_type, box_data, item_id):
         if box_type == "ftyp":
             return self.get_ftyp_description(box_data)
         elif box_type == "mvhd":
@@ -488,7 +517,7 @@ class MP4ParserApp:
         elif box_type == "traf":
             return self.get_traf_description(box_data)
         elif box_type == "trun":
-            return self.get_trun_description( box_data)
+            return self.get_trun_description( box_data, item_id)
         elif box_type == "trex":
             return self.get_trex_description(box_data)
         elif box_type == "pssh":
@@ -802,13 +831,13 @@ class MP4ParserApp:
             if box_type == "tfhd":
                 description += self.get_tfhd_description(box_data)
             elif box_type == "trun":
-                description += self.get_trun_description( box_data)
+                description += self.get_trun_description( box_data, None)
             elif box_type == "tfdt":
                 description += self.get_tfdt_description(box_data)
             offset += box_size
         return description
 
-    def get_trun_description(self,  box_data):
+    def get_trun_description(self,  box_data, item_id):
         version_flags, sample_count = struct.unpack(">I I", box_data[:8])
         version = (version_flags >> 24) & 0xFF
         flags = version_flags & 0xFFFFFF
@@ -838,8 +867,11 @@ class MP4ParserApp:
         sample_duration = self.currentTrak.duration
         cumulativeTime=self.currentTrak.cumulativeTime
         sample_cto=0
+        frames = []
         for i in range(sample_count):
             sample_info = []
+            frameInfo=FrameInfo()
+            
             if flags & 0x000100:
                 sample_duration = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
@@ -847,10 +879,13 @@ class MP4ParserApp:
                 sample_duration=self.currentTrak.duration
 
             sample_info.append(f"duration: {sample_duration}")
+            frameInfo.duration=sample_duration
             if flags & 0x000200:
                 sample_size = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
                 sample_info.append(f"offset: {data_offset} size: {sample_size} 字节")
+                frameInfo.size = sample_size
+                frameInfo.offset=data_offset
                 data_offset += sample_size
                 allbufferSize+=sample_size
 
@@ -858,6 +893,7 @@ class MP4ParserApp:
                 sample_flags = struct.unpack(">I", box_data[offset:offset+4])[0]
                 offset += 4
                 sample_info.append(f"Flags: 0x{sample_flags:08X}")
+                frameInfo.flags=sample_flags
 
             if flags & 0x000800:
                 sample_cto = struct.unpack(">i", box_data[offset:offset+4])[0]
@@ -866,11 +902,18 @@ class MP4ParserApp:
                 
             samplePresentationTime = cumulativeTime + sample_cto - 0
             cumulativeTime += sample_duration;
-            sample_info.append(f"pts:{samplePresentationTime/self.currentTrak.timescale:.3f}")
+            pts = samplePresentationTime/self.currentTrak.timescale
+            sample_info.append(f"pts:{pts}")
+            frameInfo.pts = pts
+            frames.append(frameInfo)
 
             description += f"sample {i+1}: {', '.join(sample_info)}\n"
         description += f" bufferSize: {allbufferSize}"
+        description +=f" truns: {len(frames)}\n"
         self.currentTrak.cumulativeTime=cumulativeTime
+        if item_id != None:
+            self.truns[item_id] = frames
+            self.trunItems.append(item_id)
         return description
 
     def get_or_create_track(self, track_id):
