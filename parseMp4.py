@@ -132,7 +132,7 @@ class TRACK:
         frames = []
         with open(file_path, 'rb') as file:
             for i in range(len(self.stsz)):
-                flags = 'audio'
+                flags = self.handler_type
                 if self.handler_type == 'vide':
                     if self.codec_type == "hvcc":
                         flags="B-Frame"
