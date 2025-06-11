@@ -20,6 +20,55 @@ import cv2
 from PIL import Image, ImageTk
 from urllib.parse import urlparse
 
+
+
+class NetStream:
+    def __init__(self, url):
+        self.url = url
+        self.session = requests.Session()
+        self.size = self.get_size()
+        self.position = 0
+        self.buffer = b''
+        self.chunk_size = 8192
+        
+    def get_size(self):
+        resp = self.session.head(self.url)
+        resp.raise_for_status()
+        return int(resp.headers.get('Content-Length', 0))
+    
+    def read(self, size=None):
+        if size is None:
+            size = self.size - self.position
+            
+        data = b''
+        while len(data) < size:
+            if not self.buffer:
+                start = self.position
+                end = min(self.size, start + self.chunk_size)
+                headers = {'Range': f'bytes={start}-{end-1}'}
+                resp = self.session.get(self.url, headers=headers, stream=True)
+                resp.raise_for_status()
+                self.buffer = resp.content
+            
+            take = min(size - len(data), len(self.buffer))
+            data += self.buffer[:take]
+            self.buffer = self.buffer[take:]
+            self.position += take
+            
+        return data
+    
+    def seek(self, offset, whence=io.SEEK_SET):
+        if whence == io.SEEK_SET:
+            self.position = offset
+        elif whence == io.SEEK_CUR:
+            self.position += offset
+        elif whence == io.SEEK_END:
+            self.position = self.size + offset
+        self.position = max(0, min(self.position, self.size))
+        self.buffer = b''  # 清空缓冲区
+        return self.position
+
+
 class TrackType(Enum):
     Unkonw = 0
     Video = 1
@@ -435,7 +484,6 @@ class MP4ParserApp:
         except Exception as e:
             print("Invalid selection:", e)
 
-    
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
             offset = 0
