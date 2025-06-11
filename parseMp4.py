@@ -14,6 +14,10 @@ from enum import Enum, auto, unique
 from dataclasses import dataclass
 from typing import Optional
 import requests
+import numpy as np
+
+import cv2
+from PIL import Image, ImageTk
 from urllib.parse import urlparse
 
 class TrackType(Enum):
@@ -334,19 +338,13 @@ class MP4ParserApp:
             self.selected_item = selected_item[0];
             if selected_item[0] == self.mdat_item_id:
                 self.selected_mada = True
-                self.frame_listbox.delete(0, tk.END)
-                for track_index, track in enumerate(self.tracks):
-                    frames = track.calculate_frame_info(self.temp_file.name if self.is_network_stream else self.source)
-                    des = f"track: {track_index+1} frame count: {len(frames)}"
-                    self.frame_listbox.insert(tk.END, des)   
-                    self.frame_info_list.append(des)
-                    idx = 0
-                    for frame in enumerate(frames):
-                        idx += 1
-                        display_text = f"Track {track_index + 1}  Frame {idx}  PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags}"
-                        self.frame_listbox.insert(tk.END, display_text)   
-                            
-                self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
+                if len(self.frame_info_list) < 1:
+                    for track_index, track in enumerate(self.tracks):
+                        frames = track.calculate_frame_info(self.source)
+                        for idx, frame in enumerate(frames):
+                            self.frame_info_list.append((track_index, idx, frame))
+        
+                self.show_frame_list(self.frame_info_list)
             elif self.isItemTrun(selected_item[0]):
                 self.frame_info_list = self.truns[selected_item[0]]
                 self.frame_listbox.delete(0, tk.END)
@@ -372,13 +370,14 @@ class MP4ParserApp:
             print("no seletctd\n")
             return
         # print(f"selected:{selected} self.selectd_item:{self.selected_item} self.mdat_item_id:{self.mdat_item_id}\n")
+        data=None
         if self.selected_item == self.mdat_item_id:
             index = selected[0]
             if index < len(self.frame_info_list):
                 track_index, frame_index, frame = self.frame_info_list[index]
                 with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
                     file.seek(frame.offset)
-                    data =  box_header = file.read(frame.size)
+                    data = file.read(frame.size)
                     self.hex_text.delete("1.0", tk.END)
                     self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
         elif self.isItemTrun(self.selected_item):
@@ -388,10 +387,37 @@ class MP4ParserApp:
                 frame = self.frame_info_list[index]
                 with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
                     file.seek(frame.offset)
-                    data =  box_header = file.read(frame.size)
+                    data = file.read(frame.size)
                     self.hex_text.delete("1.0", tk.END)
                     self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
 
+        if data is None:
+            print("no data\n")
+        else:
+            if frame.flags.startswith("I") or frame.flags.startswith("P") or frame.flags.startswith("B"):
+                self.show_frame_image(data, f"Track {track_index + 1} - Frame {frame_index + 1}")
+                
+    def show_frame_image(self, data, title="帧图像"):
+        try:
+            np_arr = np.frombuffer(data, dtype=np.uint8)
+            img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
+            if img is None:
+                raise ValueError("无法解码帧数据")
+
+            # 转换为 RGB 并用 Pillow 展示
+            img_rgb = cv2.cvtColor(img, cv2.COLOR_BGR2RGB)
+            pil_img = Image.fromarray(img_rgb)
+            img_tk = ImageTk.PhotoImage(pil_img)
+
+            # 弹出窗口
+            top = tk.Toplevel()
+            top.title(title)
+            label = tk.Label(top, image=img_tk)
+            label.image = img_tk  # 防止被 GC
+            label.pack()
+        except Exception as e:
+            tk.messagebox.showerror("错误", f"无法解码帧图像: {e}")
+            
     def on_hex_selection(self, event):
         try:
             selection = self.hex_text.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
