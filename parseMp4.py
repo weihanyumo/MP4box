@@ -13,6 +13,8 @@ import math
 from enum import Enum, auto, unique
 from dataclasses import dataclass
 from typing import Optional
+import requests
+from urllib.parse import urlparse
 
 class TrackType(Enum):
     Unkonw = 0
@@ -179,11 +181,13 @@ class TRACK:
 #MP4ParserApp
 class MP4ParserApp:
     
-    def __init__(self, root, file_path):
+    def __init__(self, root, source):
         self.root = root
         self.root.title("MP4 Box Parser")
 
-        self.file_path = file_path
+        self.source = source
+        self.is_network_stream = False
+        self.stream = None
         self.frame_start_positions = []
         self.total_frames = 0 
         self.box_descriptions = {}  
@@ -201,10 +205,22 @@ class MP4ParserApp:
         self.trunItems=[]
         self.selected_item = None
         
+        # 检查是否是网络流
+        parsed_url = urlparse(source)
+        if parsed_url.scheme in ('http', 'https'):
+            self.is_network_stream = True
+            try:
+                # 使用流式请求
+                self.stream = requests.get(source, stream=True)
+                self.stream.raise_for_status()
+            except requests.RequestException as e:
+                tk.messagebox.showerror("错误", f"无法获取网络流: {e}")
+                return
+        
         # main frame
         self.main_frame = tk.Frame(self.root)
         self.main_frame.pack(fill=tk.BOTH, expand=True, padx=10, pady=10)
-        self.file_label = tk.Label(self.main_frame, text=file_path, font=("Arial", 12, "bold"))
+        self.file_label = tk.Label(self.main_frame, text=source, font=("Arial", 12, "bold"))
         self.file_label.pack(anchor="w")
         
         vertical_pane = tk.PanedWindow(self.main_frame, orient=tk.VERTICAL)
@@ -277,7 +293,17 @@ class MP4ParserApp:
         bottom_pane.add(hex_frame, minsize=100, width=500)
         vertical_pane.add(bottom_pane)
 
-        self.parse_fmp4(file_path)
+        if self.is_network_stream:
+            # 对于网络流，创建一个临时文件来存储数据
+            import tempfile
+            self.temp_file = tempfile.NamedTemporaryFile(delete=False)
+            for chunk in self.stream.iter_content(chunk_size=8192):
+                if chunk:
+                    self.temp_file.write(chunk)
+            self.temp_file.close()
+            self.parse_fmp4(self.temp_file.name)
+        else:
+            self.parse_fmp4(source)
 
     def remove_trees(self):
         self.trunItems.clear
@@ -308,13 +334,19 @@ class MP4ParserApp:
             self.selected_item = selected_item[0];
             if selected_item[0] == self.mdat_item_id:
                 self.selected_mada = True
-                if len(self.frame_info_list) < 1:
-                    for track_index, track in enumerate(self.tracks):
-                        frames = track.calculate_frame_info(self._file_path)
-                        for idx, frame in enumerate(frames):
-                            self.frame_info_list.append((track_index, idx, frame))
-        
-                self.show_frame_list(self.frame_info_list)
+                self.frame_listbox.delete(0, tk.END)
+                for track_index, track in enumerate(self.tracks):
+                    frames = track.calculate_frame_info(self.temp_file.name if self.is_network_stream else self.source)
+                    des = f"track: {track_index+1} frame count: {len(frames)}"
+                    self.frame_listbox.insert(tk.END, des)   
+                    self.frame_info_list.append(des)
+                    idx = 0
+                    for frame in enumerate(frames):
+                        idx += 1
+                        display_text = f"Track {track_index + 1}  Frame {idx}  PTS: {frame.pts:.3f} offset: {frame.offset} size:{frame.size} Flags: {frame.flags}"
+                        self.frame_listbox.insert(tk.END, display_text)   
+                            
+                self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
             elif self.isItemTrun(selected_item[0]):
                 self.frame_info_list = self.truns[selected_item[0]]
                 self.frame_listbox.delete(0, tk.END)
@@ -344,7 +376,7 @@ class MP4ParserApp:
             index = selected[0]
             if index < len(self.frame_info_list):
                 track_index, frame_index, frame = self.frame_info_list[index]
-                with open(self.file_path, 'rb') as file:
+                with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
                     file.seek(frame.offset)
                     data =  box_header = file.read(frame.size)
                     self.hex_text.delete("1.0", tk.END)
@@ -354,7 +386,7 @@ class MP4ParserApp:
             # print(f"selected index:{index}\n")
             if index < len(self.frame_info_list):
                 frame = self.frame_info_list[index]
-                with open(self.file_path, 'rb') as file:
+                with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
                     file.seek(frame.offset)
                     data =  box_header = file.read(frame.size)
                     self.hex_text.delete("1.0", tk.END)
@@ -380,7 +412,6 @@ class MP4ParserApp:
     
     def parse_fmp4(self, file_path):
         with open(file_path, 'rb') as file:
-            self._file_path = file_path;
             offset = 0
             while True:
                 box_size, box_type, box_data, box_header = self.read_box(file)
@@ -1740,21 +1771,67 @@ app = None
 
 def select_file(root):
     file_path = filedialog.askopenfilename(title="选择文件", filetypes=[("所有文件", "*.*")])
-
     if file_path:
         global app
-        if app != None :
+        if app != None:
             app.remove_trees()
         app = MP4ParserApp(root, file_path)
-        app.display_frame_info() 
+        app.display_frame_info()
+        
+def ask_long_url(title="输入URL", prompt="请输入MP4网络流URL:", width=60):
+    import tkinter as tk
+    from tkinter import simpledialog
+
+    def on_ok():
+        nonlocal url
+        url = entry.get()
+        dialog.destroy()
+
+    url = None
+    dialog = tk.Toplevel()
+    dialog.title(title)
+    dialog.geometry("600x100")  # 可以根据需要调整窗口大小
+
+    label = tk.Label(dialog, text=prompt)
+    label.pack(pady=5)
+
+    entry = tk.Entry(dialog, width=width)
+    entry.pack(pady=5)
+    entry.focus()
+
+    btn = tk.Button(dialog, text="确定", command=on_ok)
+    btn.pack(pady=5)
+
+    dialog.transient()  # 设置为顶层窗口
+    dialog.grab_set()
+    dialog.wait_window()
+
+    return url
+
+def select_url(root):
+    url = ask_long_url("输入URL", "请输入MP4网络流URL:",600)
+    if url:
+        global app
+        if app != None:
+            app.remove_trees()
+        app = MP4ParserApp(root, url)
+        app.display_frame_info()
 
 if __name__ == "__main__":
     root = tk.Tk()
     root.geometry("1000x600")
-    root.iconbitmap("icon.ico")
+    try:
+        root.iconbitmap("icon.ico")
+    except:
+        pass
 
-    button = tk.Button(root, text="选择文件", command=lambda: select_file(root))
-    button.pack(anchor="w", padx=10, pady=10)
+    button_frame = tk.Frame(root)
+    button_frame.pack(anchor="w", padx=10, pady=10)
+    
+    file_button = tk.Button(button_frame, text="选择本地文件", command=lambda: select_file(root))
+    file_button.pack(side=tk.LEFT)
+    
+    url_button = tk.Button(button_frame, text="输入网络URL", command=lambda: select_url(root))
+    url_button.pack(side=tk.LEFT, padx=10)
 
     root.mainloop()
-    
