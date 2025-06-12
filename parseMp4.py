@@ -16,8 +16,8 @@ from typing import Optional
 import requests
 import numpy as np
 
-import cv2
-from PIL import Image, ImageTk
+# import cv2
+# from PIL import Image, ImageTk
 from urllib.parse import urlparse
 
 
