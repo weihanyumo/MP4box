@@ -26,29 +26,70 @@ class NetStream:
     def __init__(self, url):
         self.url = url
         self.session = requests.Session()
+        self.session.headers.update({
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        })
         self.size = self.get_size()
         self.position = 0
         self.buffer = b''
-        self.chunk_size = 8192
+        self.chunk_size = 8192 * 4  # 增加块大小
         
     def get_size(self):
-        resp = self.session.head(self.url)
-        resp.raise_for_status()
-        return int(resp.headers.get('Content-Length', 0))
+        try:
+            resp = self.session.head(self.url, allow_redirects=True)
+            resp.raise_for_status()
+            if 'Content-Length' in resp.headers:
+                len = int(resp.headers['Content-Length'])
+                print(f"文件大小: {len} bytes")
+                return len
+            
+        except Exception as e:
+            print(f"HEAD请求失败: {e}")
+        
+        try:
+            headers = {'Range': 'bytes=0-255'}
+            resp = self.session.get(self.url, headers=headers, allow_redirects=True)
+            resp.raise_for_status()
+            
+            # 从Content-Range获取完整大小
+            if 'Content-Range' in resp.headers:
+                content_range = resp.headers['Content-Range']
+                match = re.search(r'/(\d+)$', content_range)
+                if match:
+                    return int(match.group(1))
+            
+            # 如果Content-Range不存在，但Content-Length存在
+            if 'Content-Length' in resp.headers:
+                return int(resp.headers['Content-Length'])
+            
+            # 作为最后手段，尝试获取整个文件大小
+            resp = self.session.get(self.url, stream=True)
+            resp.raise_for_status()
+            return int(resp.headers.get('Content-Length', 0))
+        except Exception as e:
+            print(f"获取文件大小失败: {e}")
+            raise RuntimeError(f"无法获取文件大小: {e}")
     
     def read(self, size=None):
         if size is None:
             size = self.size - self.position
             
+        print(f"读取数据: 位置 {self.position}, 大小 {size} bytes")
         data = b''
         while len(data) < size:
             if not self.buffer:
                 start = self.position
                 end = min(self.size, start + self.chunk_size)
                 headers = {'Range': f'bytes={start}-{end-1}'}
-                resp = self.session.get(self.url, headers=headers, stream=True)
-                resp.raise_for_status()
-                self.buffer = resp.content
+                try:
+                    resp = self.session.get(self.url, headers=headers, stream=True)
+                    resp.raise_for_status()
+                    self.buffer = resp.content
+                except Exception as e:
+                    print(f"读取数据失败: {e}")
+                    # 尝试重新连接
+                    time.sleep(0.5)
+                    continue
             
             take = min(size - len(data), len(self.buffer))
             data += self.buffer[:take]
@@ -58,6 +99,7 @@ class NetStream:
         return data
     
     def seek(self, offset, whence=io.SEEK_SET):
+        print(f"Seek: 位置 {self.position}, 偏移 {offset}, whence {whence}")
         if whence == io.SEEK_SET:
             self.position = offset
         elif whence == io.SEEK_CUR:
@@ -248,7 +290,7 @@ class MP4ParserApp:
         self.timescale = 1
         self.duration = 0
         self.tracks = []
-        self.currentTrak = {}
+        self.currentTrak = None
         self.moof_startPos =0
         self.stss = []
         self.mdat_item_id = -1
@@ -1029,7 +1071,7 @@ class MP4ParserApp:
             if track.trackID == track_id:
                 return track
 
-            
+        print(f"创建新轨道: {track_id}")
         track = TRACK()
         track.trackID=track_id
         track.handler_type == 'unkown'
@@ -1048,7 +1090,11 @@ class MP4ParserApp:
         description = f"track_id: {track_id}"
         description += f"default_sample_description_index: {default_sample_description_index}\n"
         description += f"default_sample_duration: {default_sample_duration}\n"
+        if self.currentTrak is None:
+            self.currentTrak = self.get_or_create_track(track_id)
+        self.currentTrak.trackID = track_id
         self.currentTrak.duration = default_sample_duration
+        self.currentTrak.timescale = self.timescale
         description += f"default_sample_size: {default_sample_size}\n"
         description += f"default_sample_flags: {default_sample_flags}\n"
         
