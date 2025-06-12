@@ -116,7 +116,8 @@ class TrackType(Enum):
     Video = 1
     Audio = 2
     Other = 3
-    
+
+
 class BitReader:
     def __init__(self, data):
         self.data = data
@@ -153,8 +154,6 @@ class BitReader:
         return (ue + 1) // 2 if (ue % 2) else -(ue // 2)
 
 
-
-@dataclass
 class FrameInfo:
     index: int
     pts: float
@@ -167,8 +166,8 @@ class FrameInfo:
     
     def __init__(self):
         index = 0
-    
-        
+
+
 class TRACK:
     def __init__(self):
         self.timescale = 0
@@ -188,6 +187,7 @@ class TRACK:
         self.trackID = 0
         
     def calculate_frame_info(self, file_path):
+        print(f"Calculating frame info for track {self.trackID} with handler type {self.handler_type} and codec type {self.codec_type} file:{file_path}")
         dts = 0
         dts_list = []
         pts_list = []
@@ -275,7 +275,7 @@ class TRACK:
 
 #MP4ParserApp
 class MP4ParserApp:
-    
+
     def __init__(self, root, source):
         self.root = root
         self.root.title("MP4 Box Parser")
@@ -405,7 +405,7 @@ class MP4ParserApp:
         self.frame_listbox.delete(0, tk.END)
         self.main_frame.pack_forget()
         self.root.update_idletasks()
-    
+
     def show_frame_list(self,frame_info_list ):
         if not self.tracks:
             return
@@ -417,11 +417,11 @@ class MP4ParserApp:
                 self.frame_listbox.insert(tk.END, display_text)           
 
         self.frame_listbox.bind("<<ListboxSelect>>", self.on_frame_selected)
-        
+
     def isItemTrun(self, item_id):
         #print(f"self.trunItems count:{self.trunItems} item_id:{item_id}\n")
         return item_id in self.trunItems
-    
+
     def on_tree_select(self, event):
         selected_item = self.tree.selection()
         self.selected_item = None
@@ -487,7 +487,7 @@ class MP4ParserApp:
         else:
             if frame.flags.startswith("I") or frame.flags.startswith("P") or frame.flags.startswith("B"):
                 self.show_frame_image(data, f"Track {track_index + 1} - Frame {frame_index + 1}")
-                
+
     def show_frame_image(self, data, title="帧图像"):
         try:
             np_arr = np.frombuffer(data, dtype=np.uint8)
@@ -508,7 +508,7 @@ class MP4ParserApp:
             label.pack()
         except Exception as e:
             tk.messagebox.showerror("错误", f"无法解码帧图像: {e}")
-            
+
     def on_hex_selection(self, event):
         try:
             selection = self.hex_text.get(tk.SEL_FIRST, tk.SEL_LAST).strip()
@@ -609,7 +609,6 @@ class MP4ParserApp:
     def display_frame_info(self):
         total_frames = len(self.frame_start_positions)
         frame_positions = "\n".join([f"帧 {i + 1}: 起始位置 - {start}" for i, start in enumerate(self.frame_start_positions)])
-    
 
     def get_box_description(self, boxOffset, boxSize, box_type, box_data, item_id):
         if box_type == "ftyp":
@@ -1897,7 +1896,7 @@ def select_file(root):
             app.remove_trees()
         app = MP4ParserApp(root, file_path)
         app.display_frame_info()
-        
+
 def ask_long_url(title="输入URL", prompt="请输入MP4网络流URL:", width=60):
     import tkinter as tk
     from tkinter import simpledialog
