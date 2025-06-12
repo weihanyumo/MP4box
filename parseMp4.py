@@ -74,8 +74,11 @@ class NetStream:
         if size is None:
             size = self.size - self.position
             
-        print(f"读取数据: 位置 {self.position}, 大小 {size} bytes")
+        # print(f"读取数据: 位置 {self.position}, 大小 {size} bytes")
         data = b''
+        if self.position >= self.size:
+            return None
+        
         while len(data) < size:
             if not self.buffer:
                 start = self.position
@@ -87,7 +90,6 @@ class NetStream:
                     self.buffer = resp.content
                 except Exception as e:
                     print(f"读取数据失败: {e}")
-                    # 尝试重新连接
                     time.sleep(0.5)
                     continue
             
@@ -99,7 +101,7 @@ class NetStream:
         return data
     
     def seek(self, offset, whence=io.SEEK_SET):
-        print(f"Seek: 位置 {self.position}, 偏移 {offset}, whence {whence}")
+        # print(f"Seek: 位置 {self.position}, 偏移 {offset}, whence {whence}")
         if whence == io.SEEK_SET:
             self.position = offset
         elif whence == io.SEEK_CUR:
@@ -186,8 +188,7 @@ class TRACK:
         self.duration = 0
         self.trackID = 0
         
-    def calculate_frame_info(self, file_path):
-        print(f"Calculating frame info for track {self.trackID} with handler type {self.handler_type} and codec type {self.codec_type} file:{file_path}")
+    def calculate_frame_info(self, stream):
         dts = 0
         dts_list = []
         pts_list = []
@@ -227,28 +228,27 @@ class TRACK:
                 chunk_index += 1
         self.frame_start_positions = offsets[:]
         frames = []
-        with open(file_path, 'rb') as file:
-            for i in range(len(self.stsz)):
-                flags = self.handler_type
-                if self.handler_type == 'vide':
-                    if self.codec_type == "hvcc":
-                        flags="B-Frame"
-                        if i+1 in self.stss:
-                            flag="I-Frame"
-                    elif self.codec_type == "avcc":
-                        flags=self.getFrameType(file, offsets[i])
-                    
-               
-                frame = FrameInfo()
-                frame.dts = dts_list[i]
-                frame.pts = pts_list[i]
-                frame.size = sizes[i]
-                frame.offset = offsets[i]
-                frame.flags = flags
-                frames.append(frame)
+        print(f"Track {self.handler_type} frame count: {len(self.stsz)}")
+        for i in range(len(self.stsz)):
+            flags = self.handler_type
+            if self.handler_type == 'vide':
+                if self.codec_type == "hvcc":
+                    flags="B-Frame"
+                    if i+1 in self.stss:
+                        flag="I-Frame"
+                elif self.codec_type == "avcc":
+                        flags=self.getFrameType(stream, offsets[i])
+
+            frame = FrameInfo()
+            frame.dts = dts_list[i]
+            frame.pts = pts_list[i]
+            frame.size = sizes[i]
+            frame.offset = offsets[i]
+            frame.flags = flags
+            frames.append(frame)
                 
             frames_sorted = sorted(frames, key=lambda f: f.pts)
-            return frames_sorted
+        return frames_sorted
 
     def getFrameType(self, file, offset):
         pos = 0
@@ -304,13 +304,6 @@ class MP4ParserApp:
         parsed_url = urlparse(source)
         if parsed_url.scheme in ('http', 'https'):
             self.is_network_stream = True
-            try:
-                # 使用流式请求
-                self.stream = requests.get(source, stream=True)
-                self.stream.raise_for_status()
-            except requests.RequestException as e:
-                tk.messagebox.showerror("错误", f"无法获取网络流: {e}")
-                return
         
         # main frame
         self.main_frame = tk.Frame(self.root)
@@ -389,16 +382,18 @@ class MP4ParserApp:
         vertical_pane.add(bottom_pane)
 
         if self.is_network_stream:
-            # 对于网络流，创建一个临时文件来存储数据
-            import tempfile
-            self.temp_file = tempfile.NamedTemporaryFile(delete=False)
-            for chunk in self.stream.iter_content(chunk_size=8192):
-                if chunk:
-                    self.temp_file.write(chunk)
-            self.temp_file.close()
-            self.parse_fmp4(self.temp_file.name)
+            self.stream = NetStream(source)
         else:
-            self.parse_fmp4(source)
+            self.stream = open(source, 'rb')
+            
+        self.parse_fmp4()
+
+    def __del__(self):
+        if hasattr(self, 'stream'):
+            if self.is_network_stream:
+                self.stream.session.close()
+            else:
+                self.stream.close()
 
     def remove_trees(self):
         self.trunItems.clear
@@ -431,7 +426,7 @@ class MP4ParserApp:
                 self.selected_mada = True
                 if len(self.frame_info_list) < 1:
                     for track_index, track in enumerate(self.tracks):
-                        frames = track.calculate_frame_info(self.source)
+                        frames = track.calculate_frame_info(self.stream)
                         for idx, frame in enumerate(frames):
                             self.frame_info_list.append((track_index, idx, frame))
         
@@ -466,27 +461,39 @@ class MP4ParserApp:
             index = selected[0]
             if index < len(self.frame_info_list):
                 track_index, frame_index, frame = self.frame_info_list[index]
-                with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
-                    file.seek(frame.offset)
-                    data = file.read(frame.size)
-                    self.hex_text.delete("1.0", tk.END)
-                    self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
+                if self.is_network_stream:
+                    with requests.Session() as session:
+                        headers = {'Range': f'bytes={frame.offset}-{frame.offset+frame.size-1}'}
+                        resp = session.get(self.source, headers=headers)
+                        resp.raise_for_status()
+                        data = resp.content
+                else:
+                   with open(self.source, 'rb') as file:
+                       file.seek(frame.offset)
+                       data = file.read(frame.size)
         elif self.isItemTrun(self.selected_item):
             index = selected[0]
             # print(f"selected index:{index}\n")
             if index < len(self.frame_info_list):
                 frame = self.frame_info_list[index]
-                with open(self.temp_file.name if self.is_network_stream else self.source, 'rb') as file:
-                    file.seek(frame.offset)
-                    data = file.read(frame.size)
-                    self.hex_text.delete("1.0", tk.END)
-                    self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
+                if self.is_network_stream:
+                    with requests.Session() as session:
+                        headers = {'Range': f'bytes={frame.offset}-{frame.offset+frame.size-1}'}
+                        resp = session.get(self.source, headers=headers)
+                        resp.raise_for_status()
+                        data = resp.content
+                else:
+                    with open(self.source, 'rb') as file:
+                        file.seek(frame.offset)
+                        data = file.read(frame.size)
 
         if data is None:
             print("no data\n")
         else:
-            if frame.flags.startswith("I") or frame.flags.startswith("P") or frame.flags.startswith("B"):
-                self.show_frame_image(data, f"Track {track_index + 1} - Frame {frame_index + 1}")
+            self.hex_text.delete("1.0", tk.END)
+            self.hex_text.insert(tk.END, self.get_hex_data(data, "frame"))
+            # if frame.flags.startswith("I") or frame.flags.startswith("P") or frame.flags.startswith("B"):
+            #     self.show_frame_image(data, f"Track {track_index + 1} - Frame {frame_index + 1}")
 
     def show_frame_image(self, data, title="帧图像"):
         try:
@@ -526,16 +533,37 @@ class MP4ParserApp:
         except Exception as e:
             print("Invalid selection:", e)
 
-    def parse_fmp4(self, file_path):
-        with open(file_path, 'rb') as file:
-            offset = 0
-            while True:
-                box_size, box_type, box_data, box_header = self.read_box(file)
-                if not box_size:
-                    break  
-                hex_data = self.get_hex_data(box_header + box_data, box_type) 
-                self.add_box_to_treeview(box_type, box_size, box_data, offset, hex_data)
-                offset += box_size  
+    def parse_fmp4(self):
+        offset = 0
+        while True:
+            box = self.read()
+            if not box or not box[0]:
+                break
+                
+            box_size, box_type, box_data, box_header = box
+            hex_data = self.get_hex_data(box_header + (box_data or b''), box_type)
+            self.add_box_to_treeview(box_type, box_size, box_data, offset, hex_data)
+            offset += box_size
+
+            if box_type == 'mdat' and self.is_network_stream:
+                self.stream.seek(box_size - 8, io.SEEK_CUR)
+
+    def read(self):
+        box_header = self.stream.read(8)
+        if box_header is None or len(box_header) < 8:
+            print(f"读取数据失败: 头部长度不足 8 字节")
+            return None, None, None, None
+            
+        box_size, box_type = struct.unpack('>I4s', box_header)
+        box_type = box_type.decode('utf-8', errors='ignore')
+        # print(f"box_type:{box_type} box_size:{box_size}\n")
+        # 对于 mdat 只读头部
+        if box_type == 'mdat' and self.is_network_stream:
+            return box_size, box_type, None, box_header
+        else:
+            data_size = box_size - 8
+            box_data = self.stream.read(data_size) if data_size > 0 else b''
+            return box_size, box_type, box_data, box_header
 
     def read_box(self, file):
         box_header = file.read(8)
@@ -1760,7 +1788,7 @@ class MP4ParserApp:
         if sps['vui_parameters_present_flag']:
             sps.update(self.parse_vui_parameters(reader))
         return sps
-    
+
     def parse_hevc_sps(self,sps_data):
         reader = BitReader(sps_data)
 
@@ -1824,7 +1852,7 @@ class MP4ParserApp:
                 vui['frame_rate'] = vui['time_scale'] / (2 * vui['num_units_in_tick'])
 
         return vui
-    
+
     def parse_pps(self, pps_data):
         if len(pps_data) < 2 or pps_data[0] != 0x68:
             return {'error': 'no data'}
