@@ -235,7 +235,7 @@ class TRACK:
                 if self.codec_type == "hvcc":
                     flags="B-Frame"
                     if i+1 in self.stss:
-                        flag="I-Frame"
+                        flags="I-Frame"
                 elif self.codec_type == "avcc":
                         flags=self.getFrameType(stream, offsets[i])
 
