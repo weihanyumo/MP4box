@@ -365,7 +365,7 @@ class MP4ParserApp:
             hex_data_frame, height=10, wrap="none", font=("Courier", 10),
             yscrollcommand=hex_scroll_y.set, xscrollcommand=hex_scroll_x.set
         )
-
+        self.hex_text.pack()
         self.hex_text.bind("<<Selection>>", self.on_hex_selection)
         
         hex_scroll_x.config(command=self.hex_text.xview)
@@ -593,9 +593,11 @@ class MP4ParserApp:
             hex_part += "  "
             hex_part += ' '.join(f"{byte:02X}" for byte in chunk2)
             
-            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk1)
-            ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
-            lines.append(f"{hex_part:<48}  {ascii_part}")
+            ascii_part = ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk[0:8])
+            ascii_part += "  "
+            ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk[8:16])
+           # ascii_part += ''.join(chr(byte) if 32 <= byte <= 126 else '.' for byte in chunk2)
+            lines.append(f"{hex_part:<48}    {ascii_part}")
         return '\n'.join(lines)
 
     def to_hex(self, box_data):
